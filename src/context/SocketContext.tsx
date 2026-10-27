@@ -90,7 +90,30 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     const token = localStorage.getItem("accessToken");
-    const serverUrl = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+
+    // Strictly read Socket server origin from environment variables (.env)
+    let serverUrl = (
+      import.meta.env.SOCKET_URL ||
+      import.meta.env.VITE_SOCKET_URL ||
+      ""
+    ).trim();
+
+    // If SOCKET_URL was omitted but API_URL was provided, derive server origin
+    if (!serverUrl) {
+      const apiUrl = (import.meta.env.API_URL || import.meta.env.VITE_API_URL || "").trim();
+      serverUrl = apiUrl.replace(/\/api\/v1\/?$/, "").replace(/\/api\/?$/, "");
+    }
+
+    // Normalize: strip trailing slash and ensure no path component
+    if (serverUrl.endsWith("/")) {
+      serverUrl = serverUrl.slice(0, -1);
+    }
+    serverUrl = serverUrl.replace(/\/api\/v1\/?$/, "").replace(/\/api\/?$/, "");
+
+    if (!serverUrl) {
+      console.warn("[SocketContext] SOCKET_URL is not defined in environment variables. Realtime socket disabled.");
+      return;
+    }
 
     const newSocket = io(serverUrl, {
       auth: { token: token || "" },

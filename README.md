@@ -102,8 +102,8 @@ npm install
 Create a `.env` file in the `frontend` directory:
 
 ```ini
-VITE_API_BASE_URL=http://localhost:5000/api/v1
-VITE_SOCKET_URL=http://localhost:5000
+API_URL=http://localhost:5000/api/v1
+SOCKET_URL=http://localhost:5000
 ```
 
 ### 4. Run the Development Server
