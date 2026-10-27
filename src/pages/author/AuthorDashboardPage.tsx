@@ -141,7 +141,9 @@ export function AuthorDashboardPage() {
     }
   };
 
-  const totalCopiesSold = books.reduce((acc, b) => acc + (b.totalCopiesSold || 0), 0);
+  const totalCopiesSold =
+    (royaltySummary as any)?.totalCopiesSold ??
+    books.reduce((acc, b) => acc + (b.totalCopiesSold || 0), 0);
   const totalAccrued =
     royaltySummary?.totalEarned ??
     books.reduce((acc, b) => acc + (b.totalRoyaltyEarned || 0), 0);
@@ -153,7 +155,6 @@ export function AuthorDashboardPage() {
 
   const startEntry = totalCount === 0 ? 0 : (page - 1) * limit + 1;
   const endEntry = Math.min(page * limit, totalCount);
-    royaltySummary?.totalPending ?? Math.max(0, totalAccrued - totalPaid);
 
   const bankLinked = Boolean(user?.profile?.bankLinked);
   const maskedAcc = user?.profile?.bankAccountNumber
@@ -183,7 +184,9 @@ export function AuthorDashboardPage() {
               </span>
               <BookOpen className="w-4 h-4 text-emerald-800" />
             </div>
-            <span className="text-xl font-bold text-slate-900 block">{books.length}</span>
+            <span className="text-xl font-bold text-slate-900 block">
+              {totalCount || (royaltySummary as any)?.totalBooks || books.length}
+            </span>
             <span className="text-[10px] text-slate-500 block mt-0.5">
               {totalCopiesSold.toLocaleString()} total units sold
             </span>
