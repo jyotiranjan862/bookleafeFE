@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navbar } from "../components/common/Navbar";
 import { LoginModal } from "../components/common/LoginModal";
+import { apiClient } from "../api/client";
 import {
   BookOpen,
   Shield,
@@ -15,6 +16,25 @@ import {
 export function LandingPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRole, setModalRole] = useState<"author" | "admin">("author");
+  const [liveStats, setLiveStats] = useState<{
+    totalBooks: number;
+    totalAuthors: number;
+    totalResolved: number;
+    royaltySplit: string;
+  } | null>(null);
+
+  useEffect(() => {
+    apiClient
+      .get("/public/stats")
+      .then((res) => {
+        if (res.data?.data) {
+          setLiveStats(res.data.data);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load live stats:", err);
+      });
+  }, []);
 
   const openLogin = (role: "author" | "admin") => {
     setModalRole(role);
@@ -64,18 +84,24 @@ export function LandingPage() {
               </button>
             </div>
 
-            {/* Live Operational Metrics */}
+            {/* Live Operational Metrics (100% Real Live Database Telemetry) */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto pt-6 border-t border-stone-200/80">
               <div className="p-3 bg-white/60 rounded-xl border border-stone-200">
-                <span className="block text-2xl font-serif font-bold text-emerald-900">22,000+</span>
+                <span className="block text-2xl font-serif font-bold text-emerald-900">
+                  {liveStats ? liveStats.totalBooks.toLocaleString() : "..."}
+                </span>
                 <span className="text-xs text-stone-500 font-medium">Catalog Titles</span>
               </div>
               <div className="p-3 bg-white/60 rounded-xl border border-stone-200">
-                <span className="block text-2xl font-serif font-bold text-emerald-900">1,200+</span>
-                <span className="text-xs text-stone-500 font-medium">Monthly Books</span>
+                <span className="block text-2xl font-serif font-bold text-emerald-900">
+                  {liveStats ? liveStats.totalAuthors.toLocaleString() : "..."}
+                </span>
+                <span className="text-xs text-stone-500 font-medium">Active Authors</span>
               </div>
               <div className="p-3 bg-white/60 rounded-xl border border-stone-200">
-                <span className="block text-2xl font-serif font-bold text-emerald-900">80 / 20</span>
+                <span className="block text-2xl font-serif font-bold text-emerald-900">
+                  {liveStats ? liveStats.royaltySplit : "80 / 20"}
+                </span>
                 <span className="text-xs text-stone-500 font-medium">Net Profit Royalty Split</span>
               </div>
             </div>

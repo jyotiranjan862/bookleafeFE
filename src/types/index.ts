@@ -56,6 +56,7 @@ export interface TicketAttachment {
   mimeType: string;
   sizeBytes: number;
   storageUrl: string;
+  publicId?: string;
 }
 
 export interface TicketMessage {
@@ -97,6 +98,7 @@ export interface Ticket {
   status: "Open" | "In Progress" | "Awaiting Author" | "Escalated" | "Resolved" | "Closed";
   assignedTo?: User | { _id: string; name: string; email: string } | null;
   messages: TicketMessage[];
+  attachments?: TicketAttachment[];
   ai?: TicketAIClassification;
   createdAt: string;
   updatedAt: string;
@@ -162,6 +164,7 @@ export interface CreateTicketPayload {
   bookId?: string;
   subject: string;
   description: string;
+  attachments?: TicketAttachment[];
 }
 
 export interface AuthorWithMetrics {

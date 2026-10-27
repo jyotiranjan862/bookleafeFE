@@ -21,6 +21,10 @@ import {
   Check,
   Building,
   SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 
 const PUBLICATION_STAGES = [
@@ -53,6 +57,14 @@ export function AuthorDashboardPage() {
   const [books, setBooks] = useState<Book[]>([]);
   const [royaltySummary, setRoyaltySummary] = useState<RoyaltySummary | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Filters
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const navigate = useNavigate();
@@ -71,22 +83,33 @@ export function AuthorDashboardPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
+      const params: Record<string, any> = { page, limit };
+      if (statusFilter) params.status = statusFilter;
+      if (search.trim()) params.search = search.trim();
+
       const [booksRes, royaltyRes] = await Promise.all([
-        bookApi.getMyBooks({ limit: 100 }),
+        bookApi.getMyBooks(params),
         bookApi.getRoyaltySummary().catch(() => null),
       ]);
       setBooks(booksRes.data || []);
+      setTotalCount(booksRes.total || (booksRes.data ? booksRes.data.length : 0));
+      setTotalPages(booksRes.totalPages || Math.ceil((booksRes.total || 1) / limit) || 1);
       setRoyaltySummary(royaltyRes);
     } catch (err: any) {
       console.error("Failed to load author catalog:", err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, limit, statusFilter, search]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleFilterChange = (setter: (val: string) => void, val: string) => {
+    setter(val);
+    setPage(1);
+  };
 
   // Prepopulate bank form when opening modal
   const handleOpenBankModal = () => {
@@ -118,18 +141,6 @@ export function AuthorDashboardPage() {
     }
   };
 
-  const filteredBooks = books.filter((b) => {
-    if (statusFilter) {
-      if (statusFilter === "live" && !b.status.toLowerCase().includes("live")) return false;
-      if (statusFilter === "in_production" && b.status.toLowerCase().includes("live")) return false;
-    }
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    const titleMatch = b.title.toLowerCase().includes(q);
-    const isbnMatch = b.isbn ? b.isbn.toLowerCase().includes(q) : false;
-    return titleMatch || isbnMatch;
-  });
-
   const totalCopiesSold = books.reduce((acc, b) => acc + (b.totalCopiesSold || 0), 0);
   const totalAccrued =
     royaltySummary?.totalEarned ??
@@ -138,6 +149,10 @@ export function AuthorDashboardPage() {
     royaltySummary?.totalPaid ??
     books.reduce((acc, b) => acc + (b.royaltyPaid || 0), 0);
   const netPending =
+    royaltySummary?.totalPending ?? Math.max(0, totalAccrued - totalPaid);
+
+  const startEntry = totalCount === 0 ? 0 : (page - 1) * limit + 1;
+  const endEntry = Math.min(page * limit, totalCount);
     royaltySummary?.totalPending ?? Math.max(0, totalAccrued - totalPaid);
 
   const bankLinked = Boolean(user?.profile?.bankLinked);
@@ -295,9 +310,9 @@ export function AuthorDashboardPage() {
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search your titles by book name or ISBN..."
+              placeholder="Search your titles by book name, ISBN, or genre..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => handleFilterChange(setSearch, e.target.value)}
               className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-700 transition-colors"
             />
           </div>
@@ -310,13 +325,26 @@ export function AuthorDashboardPage() {
 
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => handleFilterChange(setStatusFilter, e.target.value)}
               className="bg-slate-50 border border-slate-200/80 text-slate-700 text-xs px-2.5 py-1.5 rounded-lg focus:bg-white focus:outline-none focus:border-emerald-700 font-medium"
             >
               <option value="">All Publications</option>
               <option value="live">Published & Live Only</option>
               <option value="in_production">In Production Only</option>
             </select>
+
+            {(statusFilter || search) && (
+              <button
+                onClick={() => {
+                  setStatusFilter("");
+                  setSearch("");
+                  setPage(1);
+                }}
+                className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-900 font-semibold"
+              >
+                Reset
+              </button>
+            )}
 
             <button
               onClick={() => loadData()}
@@ -336,7 +364,7 @@ export function AuthorDashboardPage() {
                 <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                   <th className="py-2.5 px-3">Book Title & Genre</th>
                   <th className="py-2.5 px-3">ISBN</th>
-                  <th className="py-2.5 px-3">Distribution Channels</th>
+                  <th className="py-2.5 px-3">Pub. Date</th>
                   <th className="py-2.5 px-3">Publication Status</th>
                   <th className="py-2.5 px-3">MRP (₹)</th>
                   <th className="py-2.5 px-3">Units Sold</th>
@@ -356,14 +384,14 @@ export function AuthorDashboardPage() {
                       </div>
                     </td>
                   </tr>
-                ) : filteredBooks.length === 0 ? (
+                ) : books.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="py-8 text-center text-slate-400 font-medium">
-                      No published books found in your author catalog.
+                      No published books found in your author catalog matching the filter.
                     </td>
                   </tr>
                 ) : (
-                  filteredBooks.map((b) => {
+                  books.map((b) => {
                     const pending = Math.max(0, (b.totalRoyaltyEarned || 0) - (b.royaltyPaid || 0));
 
                     return (
@@ -385,11 +413,15 @@ export function AuthorDashboardPage() {
                           {b.isbn || "N/A"}
                         </td>
 
-                        {/* Channels */}
-                        <td className="py-2 px-3 whitespace-nowrap text-slate-500 text-[11px]">
-                          {b.availableOn && b.availableOn.length > 0
-                            ? b.availableOn.join(", ")
-                            : "BookLeaf Store"}
+                        {/* Publication Date */}
+                        <td className="py-2 px-3 whitespace-nowrap text-slate-600 text-[11px] font-mono">
+                          {b.publicationDate
+                            ? new Date(b.publicationDate).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })
+                            : <span className="text-slate-400 italic">In Production</span>}
                         </td>
 
                         {/* Status */}
@@ -450,6 +482,75 @@ export function AuthorDashboardPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Backend Pagination Toolbar */}
+          <div className="p-3 border-t border-slate-200/80 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+            <div className="flex items-center gap-3">
+              <span>
+                Showing <strong className="text-slate-900">{startEntry}</strong> to{" "}
+                <strong className="text-slate-900">{endEntry}</strong> of{" "}
+                <strong className="text-slate-900">{totalCount}</strong> books
+              </span>
+
+              <div className="flex items-center gap-1.5 pl-3 border-l border-slate-200">
+                <span className="text-slate-500">Per page:</span>
+                <select
+                  value={limit}
+                  onChange={(e) => {
+                    setLimit(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  className="bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-emerald-700"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setPage(1)}
+                disabled={page === 1 || loading}
+                className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="First Page"
+              >
+                <ChevronsLeft className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1 || loading}
+                className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+              >
+                <ChevronLeft className="w-3 h-3" />
+                <span>Prev</span>
+              </button>
+
+              <div className="px-2.5 py-0.5 font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg">
+                Page {page} of {Math.max(1, totalPages)}
+              </div>
+
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+                className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3 h-3" />
+              </button>
+
+              <button
+                onClick={() => setPage(totalPages)}
+                disabled={page >= totalPages || loading}
+                className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Last Page"
+              >
+                <ChevronsRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -469,7 +570,14 @@ export function AuthorDashboardPage() {
                 </span>
                 <h3 className="font-bold text-slate-900 text-lg mt-1">{selectedBook.title}</h3>
                 <p className="text-xs text-slate-500 font-mono mt-0.5">
-                  ISBN: {selectedBook.isbn || "N/A"} • Retail Price: ₹{selectedBook.mrp || 0}
+                  ISBN: {selectedBook.isbn || "N/A"} • Retail Price: ₹{selectedBook.mrp || 0} • Published:{" "}
+                  {selectedBook.publicationDate
+                    ? new Date(selectedBook.publicationDate).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })
+                    : "In Production"}
                 </p>
               </div>
 

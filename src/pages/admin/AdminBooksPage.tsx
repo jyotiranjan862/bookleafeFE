@@ -37,8 +37,21 @@ export function AdminBooksPage() {
   const [editingBook, setEditingBook] = useState<Book | null>(null);
   const [editPrice, setEditPrice] = useState<number>(0);
   const [editStatus, setEditStatus] = useState<string>("");
+  const [editCopiesSold, setEditCopiesSold] = useState<number>(0);
+  const [editRoyaltyPerCopy, setEditRoyaltyPerCopy] = useState<number>(0);
+  const [editRoyaltyEarned, setEditRoyaltyEarned] = useState<number>(0);
+  const [editRoyaltyPaid, setEditRoyaltyPaid] = useState<number>(0);
   const [savingEdit, setSavingEdit] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  // Global Real Aggregates
+  const [catalogSummary, setCatalogSummary] = useState({
+    totalBooks: 0,
+    totalSales: 0,
+    totalAccrued: 0,
+    totalPaid: 0,
+    totalPending: 0,
+  });
 
   const fetchBooks = useCallback(async () => {
     try {
@@ -54,6 +67,9 @@ export function AdminBooksPage() {
       setBooks(result.data || []);
       setTotalCount(result.total || (result.data ? result.data.length : 0));
       setTotalPages(result.totalPages || Math.ceil((result.total || 1) / limit) || 1);
+      if ((result as any).summary) {
+        setCatalogSummary((result as any).summary);
+      }
     } catch (err: any) {
       console.error("Failed to load book catalog:", err);
     } finally {
@@ -70,16 +86,20 @@ export function AdminBooksPage() {
     setPage(1);
   };
 
-  // Financial aggregates across current view
-  const totalSales = books.reduce((acc, b) => acc + (b.totalCopiesSold || 0), 0);
-  const totalAccrued = books.reduce((acc, b) => acc + (b.totalRoyaltyEarned || 0), 0);
-  const totalPaid = books.reduce((acc, b) => acc + (b.royaltyPaid || 0), 0);
-  const totalPending = totalAccrued - totalPaid;
+  // Financial aggregates across entire catalog matching filter (100% Real Live Database Telemetry)
+  const totalSales = catalogSummary.totalSales || books.reduce((acc, b) => acc + (b.totalCopiesSold || 0), 0);
+  const totalAccrued = catalogSummary.totalAccrued || books.reduce((acc, b) => acc + (b.totalRoyaltyEarned || 0), 0);
+  const totalPaid = catalogSummary.totalPaid || books.reduce((acc, b) => acc + (b.royaltyPaid || 0), 0);
+  const totalPending = catalogSummary.totalPending || totalAccrued - totalPaid;
 
   const openEditModal = (book: Book) => {
     setEditingBook(book);
     setEditPrice(book.mrp || 0);
     setEditStatus(book.status);
+    setEditCopiesSold(book.totalCopiesSold || 0);
+    setEditRoyaltyPerCopy(book.authorRoyaltyPerCopy || 0);
+    setEditRoyaltyEarned(book.totalRoyaltyEarned || 0);
+    setEditRoyaltyPaid(book.royaltyPaid || 0);
   };
 
   const handleSaveBook = async (e: React.FormEvent) => {
@@ -91,6 +111,10 @@ export function AdminBooksPage() {
       const updated = await adminApi.updateBook(editingBook._id, {
         mrp: editPrice,
         status: editStatus as any,
+        totalCopiesSold: editCopiesSold,
+        authorRoyaltyPerCopy: editRoyaltyPerCopy,
+        totalRoyaltyEarned: editRoyaltyEarned,
+        royaltyPaid: editRoyaltyPaid,
       });
 
       const updatedBook: Book = (updated as any)?.book || updated;
@@ -446,10 +470,10 @@ export function AdminBooksPage() {
             onClick={() => setEditingBook(null)}
           />
 
-          <div className="relative w-full max-w-md bg-white border border-slate-200 rounded-2xl p-6 shadow-2xl z-10 animate-in fade-in zoom-in-95">
+          <div className="relative w-full max-w-lg bg-white border border-slate-200 rounded-2xl p-6 shadow-2xl z-10 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-4">
               <div>
-                <h3 className="font-bold text-slate-900 text-base">Edit Book Details</h3>
+                <h3 className="font-bold text-slate-900 text-base">Edit Sales & Author Earnings</h3>
                 <p className="text-xs text-slate-500 font-mono mt-0.5">{editingBook.isbn || "No ISBN"}</p>
               </div>
               <button
@@ -471,15 +495,95 @@ export function AdminBooksPage() {
                 />
               </div>
 
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Retail MRP (₹)</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={editPrice}
-                  onChange={(e) => setEditPrice(Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-semibold focus:bg-white focus:outline-none focus:border-emerald-600 transition-colors"
-                />
+              {/* Sales Performance Section */}
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 block">
+                  📈 Sales Performance
+                </span>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-700 font-bold block mb-1">Retail MRP (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editPrice}
+                      onChange={(e) => setEditPrice(Number(e.target.value))}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-semibold focus:outline-none focus:border-emerald-600 transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 font-bold block mb-1">Total Copies Sold</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editCopiesSold}
+                      onChange={(e) => {
+                        const copies = Number(e.target.value);
+                        setEditCopiesSold(copies);
+                        // Optional live helper: if royalty per copy is set and user edits copies, suggest accrued
+                        if (editRoyaltyPerCopy > 0) {
+                          setEditRoyaltyEarned(copies * editRoyaltyPerCopy);
+                        }
+                      }}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-semibold focus:outline-none focus:border-emerald-600 transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Author Earnings & Royalties Section */}
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 block">
+                    💰 Author Royalty Payouts
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                    Pending: ₹{Math.max(0, editRoyaltyEarned - editRoyaltyPaid).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="text-slate-700 font-bold block mb-1">Royalty/Copy (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editRoyaltyPerCopy}
+                      onChange={(e) => {
+                        const rpc = Number(e.target.value);
+                        setEditRoyaltyPerCopy(rpc);
+                        if (editCopiesSold > 0) {
+                          setEditRoyaltyEarned(editCopiesSold * rpc);
+                        }
+                      }}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-2 text-slate-900 font-semibold focus:outline-none focus:border-emerald-600 transition-colors text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 font-bold block mb-1">Total Earned (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editRoyaltyEarned}
+                      onChange={(e) => setEditRoyaltyEarned(Number(e.target.value))}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-2 text-blue-700 font-bold focus:outline-none focus:border-emerald-600 transition-colors text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 font-bold block mb-1">Total Paid (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editRoyaltyPaid}
+                      onChange={(e) => setEditRoyaltyPaid(Number(e.target.value))}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-2 text-emerald-700 font-bold focus:outline-none focus:border-emerald-600 transition-colors text-xs"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>

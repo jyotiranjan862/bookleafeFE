@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AuthorLayout } from "../../components/layout/AuthorLayout";
 import { ticketApi } from "../../api/ticketApi";
@@ -12,6 +12,16 @@ import {
   Send,
   X,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Paperclip,
+  FileText,
+  ExternalLink,
+  User,
+  Shield,
+  Clock,
 } from "lucide-react";
 import { STATUSES } from "../../utils/constants";
 
@@ -59,6 +69,12 @@ export function AuthorTicketsPage() {
   const [loading, setLoading] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
   // Filters
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -73,6 +89,12 @@ export function AuthorTicketsPage() {
   const [sendingReply, setSendingReply] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [selectedTicket?.messages?.length, selectedTicket?._id]);
+
   const { socket, joinTicket, leaveTicket } = useSocket();
 
   // Auto-open modal if URL has ?new=true or ?bookId=...
@@ -85,21 +107,32 @@ export function AuthorTicketsPage() {
   const fetchTickets = useCallback(async () => {
     try {
       setLoading(true);
-      const params: Record<string, string> = { limit: "100" };
+      const params: any = {
+        page,
+        limit,
+      };
       if (statusFilter) params.status = statusFilter;
+      if (search.trim()) params.search = search.trim();
 
       const res = await ticketApi.getMyTickets(params);
       setTickets(res.data || []);
+      setTotalCount(res.total || (res.data ? res.data.length : 0));
+      setTotalPages(res.totalPages || Math.ceil((res.total || 1) / limit) || 1);
     } catch (err: any) {
       console.error("Failed to load support tickets:", err);
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [page, limit, statusFilter, search]);
 
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
+
+  const handleFilterChange = (setter: (val: string) => void, val: string) => {
+    setter(val);
+    setPage(1);
+  };
 
   // Join ticket room when thread drawer is open
   useEffect(() => {
@@ -191,14 +224,8 @@ export function AuthorTicketsPage() {
     }
   };
 
-  const filteredTickets = tickets.filter((t) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      t.ticketNumber.toLowerCase().includes(q) ||
-      t.subject.toLowerCase().includes(q)
-    );
-  });
+  const startEntry = totalCount === 0 ? 0 : (page - 1) * limit + 1;
+  const endEntry = Math.min(page * limit, totalCount);
 
   return (
     <AuthorLayout
@@ -221,9 +248,9 @@ export function AuthorTicketsPage() {
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search by ticket # or subject..."
+                placeholder="Search by ticket #, subject, or query..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => handleFilterChange(setSearch, e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-700 transition-colors"
               />
             </div>
@@ -240,7 +267,7 @@ export function AuthorTicketsPage() {
           <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => handleFilterChange(setStatusFilter, e.target.value)}
               className="bg-slate-50 border border-slate-200/80 text-slate-700 text-xs px-2.5 py-1.5 rounded-lg focus:bg-white focus:outline-none focus:border-emerald-700 font-medium"
             >
               <option value="">All Statuses</option>
@@ -250,6 +277,19 @@ export function AuthorTicketsPage() {
                 </option>
               ))}
             </select>
+
+            {(statusFilter || search) && (
+              <button
+                onClick={() => {
+                  setStatusFilter("");
+                  setSearch("");
+                  setPage(1);
+                }}
+                className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-900 font-semibold"
+              >
+                Reset
+              </button>
+            )}
 
             <button
               onClick={() => setShowCreateModal(true)}
@@ -286,14 +326,14 @@ export function AuthorTicketsPage() {
                       </div>
                     </td>
                   </tr>
-                ) : filteredTickets.length === 0 ? (
+                ) : tickets.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-slate-400 font-medium">
                       You have no tickets matching the current filter.
                     </td>
                   </tr>
                 ) : (
-                  filteredTickets.map((t) => (
+                  tickets.map((t) => (
                     <tr
                       key={t._id}
                       onClick={() => openTicketDrawer(t)}
@@ -396,10 +436,79 @@ export function AuthorTicketsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Backend Pagination Toolbar */}
+          <div className="p-3 border-t border-slate-200/80 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+            <div className="flex items-center gap-3">
+              <span>
+                Showing <strong className="text-slate-900">{startEntry}</strong> to{" "}
+                <strong className="text-slate-900">{endEntry}</strong> of{" "}
+                <strong className="text-slate-900">{totalCount}</strong> tickets
+              </span>
+
+              <div className="flex items-center gap-1.5 pl-3 border-l border-slate-200">
+                <span className="text-slate-500">Per page:</span>
+                <select
+                  value={limit}
+                  onChange={(e) => {
+                    setLimit(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  className="bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-emerald-700"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setPage(1)}
+                disabled={page === 1 || loading}
+                className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="First Page"
+              >
+                <ChevronsLeft className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1 || loading}
+                className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+              >
+                <ChevronLeft className="w-3 h-3" />
+                <span>Prev</span>
+              </button>
+
+              <div className="px-2.5 py-0.5 font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg">
+                Page {page} of {Math.max(1, totalPages)}
+              </div>
+
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+                className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3 h-3" />
+              </button>
+
+              <button
+                onClick={() => setPage(totalPages)}
+                disabled={page >= totalPages || loading}
+                className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Last Page"
+              >
+                <ChevronsRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Ticket Conversation Slide-Over Drawer */}
+      {/* Ticket Conversation Slide-Over Drawer with Two-Sided Modern Chat */}
       {selectedTicket && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div
@@ -407,12 +516,15 @@ export function AuthorTicketsPage() {
             onClick={() => setSelectedTicket(null)}
           />
 
-          <div className="relative w-full max-w-xl bg-white border-l border-slate-200 h-full flex flex-col z-10 shadow-2xl animate-in slide-in-from-right duration-200">
+          <div className="relative w-full max-w-xl bg-white border-l border-slate-200 h-full flex flex-col z-10 shadow-2xl animate-in slide-in-from-right duration-200 overflow-hidden">
+            {/* Top Gradient Brand Accent Bar */}
+            <div className="h-1.5 w-full bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-800" />
+
             {/* Drawer Header */}
-            <div className="p-5 border-b border-slate-200 bg-slate-50/70 flex items-start justify-between gap-4">
+            <div className="p-5 border-b border-slate-200 bg-slate-50/80 flex items-start justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-mono font-bold text-xs text-emerald-800">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="font-mono font-bold text-xs text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                     {selectedTicket.ticketNumber}
                   </span>
                   <span className="text-slate-300">•</span>
@@ -426,103 +538,212 @@ export function AuthorTicketsPage() {
                     {selectedTicket.status.replace("_", " ")}
                   </span>
                   <span className="text-slate-300">•</span>
+                  <span className="text-[11px] text-slate-500 font-mono flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    {getTimeAgo(selectedTicket.createdAt)}
+                  </span>
+                  <span className="text-slate-300">•</span>
                   {renderSlaBadge(selectedTicket)}
                 </div>
+
                 <h2 className="text-base font-bold text-slate-900 leading-snug">
                   {selectedTicket.subject}
                 </h2>
+
                 {selectedTicket.book && typeof selectedTicket.book === "object" && (
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Associated Book: {selectedTicket.book.title}
+                  <p className="text-xs text-slate-500 mt-1 flex items-center gap-1 font-mono">
+                    <span>📖 Related Title:</span>
+                    <strong className="text-slate-800 font-sans">{selectedTicket.book.title}</strong>
                   </p>
                 )}
               </div>
 
               <button
                 onClick={() => setSelectedTicket(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                title="Close Drawer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Conversation Messages */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              {/* Original Query */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Original Query Description
+            {/* Two-Sided Interactive Chat Timeline */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-50/40">
+              <div className="flex items-center justify-center my-1">
+                <span className="text-[10px] font-mono uppercase font-bold text-slate-400 px-3 py-1 bg-slate-100 rounded-full border border-slate-200">
+                  Ticket Submitted • {new Date(selectedTicket.createdAt).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
                 </span>
-                <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
-                  {selectedTicket.description}
-                </p>
-                <div className="mt-2 pt-2 border-t border-slate-200/80 flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                  <span>Submitted on: {new Date(selectedTicket.createdAt).toLocaleString()}</span>
-                  <span>{getTimeAgo(selectedTicket.createdAt)}</span>
+              </div>
+
+              {/* 1. Root Query Message from You (Author) — Right Aligned */}
+              <div className="flex items-start justify-end gap-3 max-w-[90%] ml-auto animate-in fade-in">
+                <div className="space-y-1 flex-1 flex flex-col items-end">
+                  <div className="flex items-center gap-2 pr-1">
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {new Date(selectedTicket.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 font-mono">
+                      YOU (AUTHOR)
+                    </span>
+                    <span className="text-xs font-bold text-slate-800">Original Inquiry</span>
+                  </div>
+
+                  <div className="bg-emerald-800 text-white rounded-2xl rounded-tr-xs p-4 shadow-xs text-xs space-y-2.5 max-w-full text-left">
+                    <div className="font-bold text-emerald-100 pb-1.5 border-b border-emerald-700/80 flex items-center justify-between">
+                      <span>Subject: {selectedTicket.subject}</span>
+                    </div>
+
+                    <p className="whitespace-pre-wrap leading-relaxed text-emerald-50">
+                      {selectedTicket.description}
+                    </p>
+
+                    {/* Attached Evidence in Root Query */}
+                    {selectedTicket.attachments && selectedTicket.attachments.length > 0 && (
+                      <div className="pt-2 border-t border-emerald-700/80 space-y-1.5">
+                        <span className="text-[10px] font-bold text-emerald-200 uppercase tracking-wider flex items-center gap-1">
+                          <Paperclip className="w-3 h-3 text-emerald-200" />
+                          <span>Attached Evidence ({selectedTicket.attachments.length})</span>
+                        </span>
+                        <div className="grid grid-cols-1 gap-2">
+                          {selectedTicket.attachments.map((att, idx) => {
+                            const isImg = att.mimeType?.startsWith("image/");
+                            return (
+                              <a
+                                key={att.storageUrl || idx}
+                                href={att.storageUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2.5 p-2 rounded-xl bg-emerald-900/60 border border-emerald-700 hover:border-emerald-400 transition-all group"
+                              >
+                                {isImg ? (
+                                  <img
+                                    src={att.storageUrl}
+                                    alt={att.originalName}
+                                    className="w-9 h-9 rounded-lg object-cover border border-emerald-600 shrink-0 bg-white"
+                                  />
+                                ) : (
+                                  <div className="w-9 h-9 rounded-lg bg-emerald-700 text-white flex items-center justify-center shrink-0">
+                                    <FileText className="w-4 h-4" />
+                                  </div>
+                                )}
+                                <div className="truncate flex-1">
+                                  <span className="text-[11px] font-bold text-white group-hover:text-emerald-200 block truncate">
+                                    {att.originalName}
+                                  </span>
+                                  <span className="text-[9px] text-emerald-300 font-mono block">
+                                    {(att.sizeBytes / 1024).toFixed(1)} KB • Cloudinary
+                                  </span>
+                                </div>
+                                <ExternalLink className="w-3 h-3 text-emerald-300 group-hover:text-white shrink-0" />
+                              </a>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="w-8 h-8 rounded-full bg-emerald-800 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                  <User className="w-4 h-4 text-emerald-200" />
                 </div>
               </div>
 
-              {/* Messages History */}
-              <div className="space-y-2.5 pt-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Staff Communications
-                </span>
+              {/* 2. Conversation Messages Stream */}
+              {selectedTicket.messages && selectedTicket.messages.length > 0 ? (
+                selectedTicket.messages.map((msg, idx) => {
+                  const isYou = msg.senderType === "author";
+                  const formattedTime = new Date(msg.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
 
-                {selectedTicket.messages && selectedTicket.messages.length > 0 ? (
-                  selectedTicket.messages.map((msg, idx) => (
+                  if (isYou) {
+                    // Author Follow-up Message (Right Aligned)
+                    return (
+                      <div
+                        key={msg._id || idx}
+                        className="flex items-start justify-end gap-3 max-w-[85%] ml-auto animate-in fade-in"
+                      >
+                        <div className="flex flex-col items-end">
+                          <div className="flex items-center gap-2 mb-1 pr-1">
+                            <span className="text-[10px] text-slate-400 font-mono">{formattedTime}</span>
+                            <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 font-mono">
+                              YOU
+                            </span>
+                          </div>
+                          <div className="bg-emerald-800 text-white p-3.5 rounded-2xl rounded-tr-xs text-xs leading-relaxed shadow-xs whitespace-pre-wrap">
+                            {msg.body}
+                          </div>
+                        </div>
+
+                        <div className="w-8 h-8 rounded-full bg-emerald-800 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                          <User className="w-4 h-4 text-emerald-200" />
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Staff / Publishing Team Message (Left Aligned)
+                  return (
                     <div
                       key={msg._id || idx}
-                      className={`p-3.5 rounded-xl text-xs border ${
-                        msg.senderType === "author"
-                          ? "bg-white border-slate-200 text-slate-800"
-                          : "bg-emerald-50/60 border-emerald-200 text-slate-900"
-                      }`}
+                      className="flex items-start gap-3 max-w-[85%] self-start animate-in fade-in"
                     >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="font-bold text-[11px]">
-                          {msg.senderType === "author"
-                            ? "You (Author)"
-                            : "BookLeaf Publishing Team"}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          {new Date(msg.createdAt).toLocaleString([], {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
+                      <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-300 shadow-2xs mt-0.5">
+                        <Shield className="w-4 h-4 text-emerald-800" />
                       </div>
-                      <p className="whitespace-pre-wrap leading-relaxed text-xs">{msg.body}</p>
+
+                      <div>
+                        <div className="flex items-center gap-2 mb-1 pl-1">
+                          <span className="text-xs font-bold text-slate-800">
+                            BookLeaf Publishing Team
+                          </span>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                            SUPPORT
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">{formattedTime}</span>
+                        </div>
+                        <div className="bg-white border border-slate-200 text-slate-900 p-3.5 rounded-2xl rounded-tl-xs text-xs leading-relaxed shadow-2xs whitespace-pre-wrap">
+                          {msg.body}
+                        </div>
+                      </div>
                     </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-slate-400 italic py-2">
-                    Our team is currently reviewing your ticket. Replies will appear here.
-                  </p>
-                )}
-              </div>
+                  );
+                })
+              ) : (
+                <div className="p-4 text-center text-xs text-slate-400 italic">
+                  Our author operations team has received your ticket and is actively reviewing it.
+                </div>
+              )}
+
+              {/* Scroll anchor */}
+              <div ref={messagesEndRef} />
             </div>
 
             {/* Reply Composer Form */}
             {selectedTicket.status !== STATUSES.CLOSED ? (
               <form
                 onSubmit={handleSendReply}
-                className="p-4 border-t border-slate-200 bg-slate-50/50"
+                className="p-4 border-t border-slate-200 bg-white"
               >
                 <textarea
                   rows={3}
                   value={replyBody}
                   onChange={(e) => setReplyBody(e.target.value)}
                   placeholder="Type your response to the publishing support team..."
-                  className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-700 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-700 focus:ring-1 focus:ring-emerald-700 transition-all resize-none shadow-xs"
                 />
 
-                <div className="flex justify-end mt-2.5">
+                <div className="flex items-center justify-between mt-2.5">
+                  <span className="text-[10px] text-slate-400">
+                    Replies notify assigned BookLeaf support executive
+                  </span>
+
                   <button
                     type="submit"
                     disabled={sendingReply || !replyBody.trim()}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-semibold text-xs transition-all shadow-xs disabled:opacity-50"
+                    className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-semibold text-xs transition-all shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>{sendingReply ? "Sending..." : "Send Reply"}</span>

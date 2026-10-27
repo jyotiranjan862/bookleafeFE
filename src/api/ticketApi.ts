@@ -4,11 +4,30 @@ import type {
   CreateTicketPayload,
   PaginatedResult,
   Ticket,
+  TicketAttachment,
   TicketFilterParams,
   TicketMessage,
 } from "../types";
 
 export const ticketApi = {
+  /**
+   * Upload an attachment to Cloudinary (Author / Admin)
+   */
+  uploadAttachment: async (file: File): Promise<TicketAttachment> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const { data } = await apiClient.post<ApiResponse<{ attachment: TicketAttachment }>>(
+      "/uploads",
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
+    return data.data.attachment;
+  },
+
   /**
    * Submit a new support ticket (Author)
    */

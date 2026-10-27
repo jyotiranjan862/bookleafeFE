@@ -5,7 +5,6 @@ import { useAuthContext } from "../../context/AuthContext";
 import { ConfirmModal } from "../common/ConfirmModal";
 import {
   BookOpen,
-  PlusCircle,
   MessageSquare,
   LogOut,
   Menu,

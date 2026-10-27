@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { AdminLayout } from "../../components/layout/AdminLayout";
 import { adminApi } from "../../api/adminApi";
 import { useSocket } from "../../context/SocketContext";
+import { useAuthContext } from "../../context/AuthContext";
+import { ConfirmModal } from "../../components/common/ConfirmModal";
 import type { Ticket } from "../../types";
 import {
   Search,
@@ -10,8 +12,6 @@ import {
   Send,
   Lock,
   X,
-  Bot,
-  Copy,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -19,6 +19,15 @@ import {
   ChevronsRight,
   SlidersHorizontal,
   Clock,
+  UserCheck,
+  UserPlus,
+  Flame,
+  Paperclip,
+  ExternalLink,
+  User,
+  Shield,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { CATEGORIES, PRIORITIES, STATUSES } from "../../utils/constants";
 
@@ -79,23 +88,43 @@ export function AdminQueuePage() {
     critical: 0,
   });
 
-  // Filters
+  const { user } = useAuthContext();
+
+  // Filters & Quick Views
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
+  const [quickView, setQuickView] = useState<"all" | "urgent" | "oldest">("all");
 
   // Selected Ticket for Drawer Management
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+
+  // Confirmation Modal & Pending Action State
+  const [pendingAction, setPendingAction] = useState<{
+    type: "status" | "category" | "priority" | "assign" | "unassign";
+    title: string;
+    message: string;
+    confirmText: string;
+    confirmVariant: "danger" | "primary" | "warning";
+    payload?: any;
+  } | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [showTriageControls, setShowTriageControls] = useState(false);
 
   // Management Drawer State
   const [replyBody, setReplyBody] = useState("");
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [generatingAiDraft, setGeneratingAiDraft] = useState(false);
-  const [aiDraft, setAiDraft] = useState<string | null>(null);
-  const [copiedDraft, setCopiedDraft] = useState(false);
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [selectedTicket?.messages?.length, selectedTicket?._id]);
 
   const { socket, joinTicket, leaveTicket } = useSocket();
 
@@ -104,6 +133,9 @@ export function AdminQueuePage() {
       const stats = await adminApi.getAnalytics();
       const byStatus = (stats as any)?.byStatus || {};
       const statusList = (stats as any)?.statusList || [];
+      const byPriority = (stats as any)?.byPriority || {};
+      const priorityList = (stats as any)?.priorityList || [];
+
       const open =
         byStatus["Open"] ??
         (statusList.find((s: any) => s.status === "Open")?.count || 0);
@@ -111,11 +143,17 @@ export function AdminQueuePage() {
         byStatus["In Progress"] ??
         (statusList.find((s: any) => s.status === "In_Progress" || s.status === "In Progress")?.count || 0);
 
+      const critical =
+        (byPriority["Critical"] || 0) + (byPriority["High"] || 0) ||
+        priorityList
+          .filter((p: any) => p.priority === "Critical" || p.priority === "High")
+          .reduce((sum: number, p: any) => sum + (p.count || 0), 0);
+
       setQueueSummary({
         total: stats.total || 0,
         open,
         inProgress,
-        critical: 0,
+        critical,
       });
     } catch (e) {
       console.error("Queue summary error:", e);
@@ -227,9 +265,6 @@ export function AdminQueuePage() {
               }
             : null
         );
-        if (payload.ai?.draftResponse) {
-          setAiDraft(payload.ai.draftResponse);
-        }
       }
     };
 
@@ -254,7 +289,7 @@ export function AdminQueuePage() {
     };
   }, [socket, selectedTicket, loadQueueSummary]);
 
-  // Fetch Tickets with Pagination and Filtering
+  // Fetch Tickets with Pagination, Date Filtering, and Quick Sorting
   const fetchTickets = useCallback(async () => {
     try {
       setLoading(true);
@@ -267,6 +302,27 @@ export function AdminQueuePage() {
       if (priorityFilter) params.priority = priorityFilter;
       if (search.trim()) params.search = search.trim();
 
+      // Quick views logic: "urgent" (Critical) or "oldest" (Ascending createdAt)
+      if (quickView === "urgent") {
+        params.priority = "Critical";
+      } else if (quickView === "oldest") {
+        params.sort = "createdAt";
+        params.order = "asc";
+      }
+
+      // Date filtering logic
+      if (dateFilter === "today") {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        params.from = start.toISOString();
+      } else if (dateFilter === "7d") {
+        const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        params.from = start.toISOString();
+      } else if (dateFilter === "30d") {
+        const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        params.from = start.toISOString();
+      }
+
       const result = await adminApi.getAdminQueue(params);
       setTickets(result.data || []);
       setTotalCount(result.total || (result.data ? result.data.length : 0));
@@ -276,7 +332,7 @@ export function AdminQueuePage() {
     } finally {
       setLoading(false);
     }
-  }, [page, limit, statusFilter, categoryFilter, priorityFilter, search]);
+  }, [page, limit, statusFilter, categoryFilter, priorityFilter, dateFilter, quickView, search]);
 
   useEffect(() => {
     fetchTickets();
@@ -292,7 +348,6 @@ export function AdminQueuePage() {
   const openTicketDrawer = async (ticket: Ticket) => {
     try {
       setSelectedTicket(ticket);
-      setAiDraft(null);
       setReplyBody("");
       setIsInternalNote(false);
       const fullTicket = await adminApi.getTicketById(ticket._id);
@@ -302,46 +357,123 @@ export function AdminQueuePage() {
     }
   };
 
-  // Update Status
-  const handleStatusChange = async (newStatus: string) => {
+  // Trigger Confirmation Modals Before Critical Actions
+  const requestStatusChange = (newStatus: string) => {
+    if (!selectedTicket || newStatus === selectedTicket.status) return;
+    setPendingAction({
+      type: "status",
+      title: `Confirm Status Change: ${newStatus.replace("_", " ")}`,
+      message: `Are you sure you want to transition ticket ${selectedTicket.ticketNumber} to "${newStatus.replace("_", " ")}"? This will immediately update the author's triage timeline and SLA tracking.`,
+      confirmText: `Confirm Status Change`,
+      confirmVariant:
+        newStatus === STATUSES.CLOSED || newStatus === STATUSES.RESOLVED
+          ? "primary"
+          : "warning",
+      payload: { newStatus },
+    });
+  };
+
+  const requestCategoryChange = (newCategory: string) => {
+    if (!selectedTicket || newCategory === selectedTicket.category) return;
+    setPendingAction({
+      type: "category",
+      title: "Confirm Category Override",
+      message: `Re-classify ticket ${selectedTicket.ticketNumber} to category "${newCategory}"? This will override the AI classifier recommendation.`,
+      confirmText: "Override Category",
+      confirmVariant: "warning",
+      payload: { category: newCategory },
+    });
+  };
+
+  const requestPriorityChange = (newPriority: string) => {
+    if (!selectedTicket || newPriority === selectedTicket.priority) return;
+    setPendingAction({
+      type: "priority",
+      title: `Confirm Priority Override: ${newPriority}`,
+      message: `Change priority of ticket ${selectedTicket.ticketNumber} to "${newPriority}"? ${
+        newPriority === "Critical"
+          ? "Critical priority enforces a strict 24-hour SLA turnaround window."
+          : ""
+      }`,
+      confirmText: "Override Priority",
+      confirmVariant: newPriority === "Critical" ? "danger" : "warning",
+      payload: { priority: newPriority },
+    });
+  };
+
+  const requestAssignToMe = () => {
+    if (!selectedTicket || !user?._id) return;
+    setPendingAction({
+      type: "assign",
+      title: "Assign Ticket to Yourself",
+      message: `Take full operational ownership of ticket ${selectedTicket.ticketNumber}? You will be assigned as primary responder.`,
+      confirmText: "Assign to Me",
+      confirmVariant: "primary",
+    });
+  };
+
+  const requestUnassignTicket = () => {
     if (!selectedTicket) return;
+    setPendingAction({
+      type: "unassign",
+      title: "Unassign Ticket",
+      message: `Release your ownership of ticket ${selectedTicket.ticketNumber}? It will return to the unassigned queue for other team members.`,
+      confirmText: "Release Ticket",
+      confirmVariant: "warning",
+    });
+  };
+
+  // Execute Confirmed Action & Fetch Latest Authoritative State
+  const executePendingAction = async () => {
+    if (!pendingAction || !selectedTicket) return;
     try {
-      const updated = await adminApi.updateStatus(selectedTicket._id, newStatus);
-      setSelectedTicket(updated);
-      setTickets((prev) => prev.map((t) => (t._id === updated._id ? { ...t, status: updated.status } : t)));
-      showToast(`Ticket status updated to ${newStatus}`);
+      setActionLoading(true);
+      if (pendingAction.type === "status") {
+        await adminApi.updateStatus(selectedTicket._id, pendingAction.payload.newStatus);
+        showToast(`Status updated to ${pendingAction.payload.newStatus.replace("_", " ")}`);
+      } else if (pendingAction.type === "category") {
+        await adminApi.overrideClassification(selectedTicket._id, {
+          category: pendingAction.payload.category,
+          priority: selectedTicket.priority,
+        });
+        showToast("Category override updated successfully");
+      } else if (pendingAction.type === "priority") {
+        await adminApi.overrideClassification(selectedTicket._id, {
+          category: selectedTicket.category,
+          priority: pendingAction.payload.priority,
+        });
+        showToast("Priority override updated successfully");
+      } else if (pendingAction.type === "assign") {
+        await adminApi.assignTicket(selectedTicket._id, user!._id);
+        showToast("Ticket assigned to you");
+      } else if (pendingAction.type === "unassign") {
+        await adminApi.assignTicket(selectedTicket._id, null);
+        showToast("Ticket returned to unassigned queue");
+      }
+
+      // Re-fetch latest authoritative ticket state from backend API
+      const refreshed = await adminApi.getTicketById(selectedTicket._id);
+      setSelectedTicket(refreshed);
+      await fetchTickets();
+      await loadQueueSummary();
     } catch (err: any) {
-      alert(err?.message || "Failed to update status");
+      alert(err?.message || "Action failed to execute");
+    } finally {
+      setActionLoading(false);
+      setPendingAction(null);
     }
   };
 
-  // Update Classification
-  const handleClassificationChange = async (category?: string, priority?: string) => {
-    if (!selectedTicket) return;
-    try {
-      const updated = await adminApi.overrideClassification(selectedTicket._id, {
-        category: category || selectedTicket.category,
-        priority: (priority as any) || selectedTicket.priority,
-      });
-      setSelectedTicket(updated);
-      setTickets((prev) =>
-        prev.map((t) =>
-          t._id === updated._id ? { ...t, category: updated.category, priority: updated.priority } : t
-        )
-      );
-      showToast("Classification updated successfully");
-    } catch (err: any) {
-      alert(err?.message || "Failed to update classification");
-    }
-  };
-
-  // Generate AI Draft Response
+  // Generate AI Draft Response directly into composer
   const handleGenerateAiDraft = async () => {
     if (!selectedTicket) return;
     try {
       setGeneratingAiDraft(true);
       const draftResult = await adminApi.generateAiDraft(selectedTicket._id);
-      setAiDraft(draftResult.draftResponse);
+      if (draftResult.draftResponse) {
+        setReplyBody(draftResult.draftResponse);
+        showToast("AI response drafted into reply box");
+      }
     } catch (err: any) {
       alert(err?.message || "Failed to generate AI draft");
     } finally {
@@ -349,7 +481,7 @@ export function AdminQueuePage() {
     }
   };
 
-  // Post Reply or Internal Note
+  // Post Reply or Internal Note & Re-fetch Fresh State
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTicket || !replyBody.trim()) return;
@@ -357,10 +489,13 @@ export function AdminQueuePage() {
     try {
       setSendingMessage(true);
       await adminApi.addMessage(selectedTicket._id, replyBody.trim(), isInternalNote);
+      
+      // Re-fetch authoritative fresh state after posting message
       const refreshed = await adminApi.getTicketById(selectedTicket._id);
       setSelectedTicket(refreshed);
       setReplyBody("");
-      showToast(isInternalNote ? "Internal note recorded" : "Reply sent to author");
+      showToast(isInternalNote ? "Internal staff note recorded" : "Reply sent to author");
+      await fetchTickets();
     } catch (err: any) {
       alert(err?.message || "Failed to send message");
     } finally {
@@ -375,7 +510,7 @@ export function AdminQueuePage() {
 
   const openCount = tickets.filter((t) => t.status === STATUSES.OPEN).length;
   const inProgressCount = tickets.filter((t) => t.status === STATUSES.IN_PROGRESS).length;
-  const criticalCount = tickets.filter((t) => t.priority === PRIORITIES.CRITICAL || t.priority === PRIORITIES.HIGH).length;
+  const criticalCount = queueSummary.critical ?? tickets.filter((t) => t.priority === PRIORITIES.CRITICAL || t.priority === PRIORITIES.HIGH).length;
 
   const startEntry = totalCount === 0 ? 0 : (page - 1) * limit + 1;
   const endEntry = Math.min(page * limit, totalCount);
@@ -437,6 +572,62 @@ export function AdminQueuePage() {
           </div>
         </div>
 
+        {/* Quick Queue Priority Tabs */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => {
+              setQuickView("all");
+              setPage(1);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+              quickView === "all"
+                ? "bg-slate-900 text-white shadow-xs"
+                : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <span>All Tickets</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-700 text-slate-200">
+              {queueSummary.total || totalCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setQuickView("urgent");
+              setPage(1);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+              quickView === "urgent"
+                ? "bg-red-600 text-white shadow-xs"
+                : "bg-white border border-red-200 text-red-700 hover:bg-red-50"
+            }`}
+          >
+            <Flame className="w-3.5 h-3.5" />
+            <span>Most Urgent (Critical)</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-red-100 text-red-800">
+              {criticalCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setQuickView("oldest");
+              setPage(1);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+              quickView === "oldest"
+                ? "bg-amber-600 text-white shadow-xs"
+                : "bg-white border border-amber-200 text-amber-800 hover:bg-amber-50"
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>Oldest Unresolved (FIFO)</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-800">
+              {queueSummary.open || openCount}
+            </span>
+          </button>
+        </div>
+
         {/* Filter and Search Bar in White Theme */}
         <div className="bg-white border border-slate-200/90 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-xs">
           <div className="flex flex-1 items-center gap-3 w-full md:w-auto">
@@ -465,6 +656,18 @@ export function AdminQueuePage() {
               <SlidersHorizontal className="w-3.5 h-3.5" />
               <span>Filters:</span>
             </div>
+
+            {/* Date Filter */}
+            <select
+              value={dateFilter}
+              onChange={(e) => handleFilterChange(setDateFilter, e.target.value)}
+              className="bg-slate-50 border border-slate-200/80 text-slate-700 text-xs px-3 py-2 rounded-xl focus:bg-white focus:outline-none focus:border-emerald-600 font-medium"
+            >
+              <option value="">All Dates</option>
+              <option value="today">Created Today</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="30d">Last 30 Days</option>
+            </select>
 
             {/* Status Filter */}
             <select
@@ -508,12 +711,14 @@ export function AdminQueuePage() {
               ))}
             </select>
 
-            {(statusFilter || categoryFilter || priorityFilter || search) && (
+            {(statusFilter || categoryFilter || priorityFilter || dateFilter || search || quickView !== "all") && (
               <button
                 onClick={() => {
                   setStatusFilter("");
                   setCategoryFilter("");
                   setPriorityFilter("");
+                  setDateFilter("");
+                  setQuickView("all");
                   setSearch("");
                   setPage(1);
                 }}
@@ -537,6 +742,7 @@ export function AdminQueuePage() {
                   <th className="py-3.5 px-4">Category</th>
                   <th className="py-3.5 px-4">Priority</th>
                   <th className="py-3.5 px-4">Status</th>
+                  <th className="py-3.5 px-4">Assignee</th>
                   <th className="py-3.5 px-4">Timing & SLA</th>
                   <th className="py-3.5 px-4 text-right">Action</th>
                 </tr>
@@ -544,7 +750,7 @@ export function AdminQueuePage() {
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-400">
+                    <td colSpan={9} className="py-12 text-center text-slate-400">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <RefreshCw className="w-5 h-5 animate-spin text-emerald-700" />
                         <span>Loading support queue...</span>
@@ -553,7 +759,7 @@ export function AdminQueuePage() {
                   </tr>
                 ) : tickets.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-400 font-medium">
+                    <td colSpan={9} className="py-12 text-center text-slate-400 font-medium">
                       No tickets match the current filter criteria.
                     </td>
                   </tr>
@@ -634,6 +840,18 @@ export function AdminQueuePage() {
                           >
                             {t.status.replace("_", " ")}
                           </span>
+                        </td>
+
+                        {/* Assignee */}
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          {t.assignedTo && typeof t.assignedTo === "object" ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                              <UserCheck className="w-3 h-3 text-emerald-600" />
+                              <span className="truncate max-w-[90px]">{t.assignedTo.name}</span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic">Unassigned</span>
+                          )}
                         </td>
 
                         {/* Timing & SLA Countdown */}
@@ -749,7 +967,7 @@ export function AdminQueuePage() {
         </div>
       </div>
 
-      {/* Slide-over Ticket Management Drawer in White Theme */}
+      {/* Slide-over Ticket Management Drawer with Two-Sided Modern Chat */}
       {selectedTicket && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div
@@ -757,260 +975,402 @@ export function AdminQueuePage() {
             onClick={() => setSelectedTicket(null)}
           />
 
-          <div className="relative w-full max-w-2xl bg-white border-l border-slate-200 h-full flex flex-col z-10 shadow-2xl animate-in slide-in-from-right duration-200">
-            {/* Drawer Header */}
-            <div className="p-6 border-b border-slate-200 bg-slate-50/70 flex items-start justify-between gap-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <span className="font-mono font-bold text-sm text-emerald-800">
+          <div className="relative w-full max-w-2xl bg-white border-l border-slate-200 h-full flex flex-col z-10 shadow-2xl animate-in slide-in-from-right duration-200 overflow-hidden">
+            {/* Minimal Top Brand Line */}
+            <div className="h-1 w-full bg-emerald-800" />
+
+            {/* Minimal Drawer Header */}
+            <div className="px-5 py-3 border-b border-slate-100 bg-white flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-mono font-bold text-slate-900">
                     {selectedTicket.ticketNumber}
                   </span>
                   <span className="text-slate-300">•</span>
-                  <span className="text-xs text-slate-600 font-mono flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    {new Date(selectedTicket.createdAt).toLocaleDateString([], {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}{" "}
-                    at{" "}
-                    {new Date(selectedTicket.createdAt).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    {getTimeAgo(selectedTicket.createdAt)}
                   </span>
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    ({getTimeAgo(selectedTicket.createdAt)})
-                  </span>
+                  <span className="text-slate-300">•</span>
                   {renderSlaBadge(selectedTicket)}
-                </div>
-                <h2 className="text-lg font-bold text-slate-900 leading-snug">{selectedTicket.subject}</h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  Author:{" "}
-                  <span className="text-slate-800 font-semibold">
-                    {typeof selectedTicket.author === "object"
-                      ? selectedTicket.author.name
-                      : "Author"}
-                  </span>{" "}
-                  (
-                  {typeof selectedTicket.author === "object"
-                    ? selectedTicket.author.email
-                    : ""}
-                  )
-                </p>
-              </div>
-
-              <button
-                onClick={() => setSelectedTicket(null)}
-                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Quick Actions & Triage Controls Bar */}
-            <div className="p-4 border-b border-slate-200 bg-white grid grid-cols-2 gap-3 text-xs">
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-                  Update Status
-                </label>
-                <select
-                  value={selectedTicket.status}
-                  onChange={(e) => handleStatusChange(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-600 font-semibold"
-                >
-                  {(Object.values(STATUSES) as string[]).map((st) => (
-                    <option key={st} value={st}>
-                      {st.replace("_", " ")}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-                  Override Priority
-                </label>
-                <select
-                  value={selectedTicket.priority}
-                  onChange={(e) => handleClassificationChange(undefined, e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-600 font-semibold"
-                >
-                  {(Object.values(PRIORITIES) as string[]).map((pr) => (
-                    <option key={pr} value={pr}>
-                      {pr}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Scrollable Conversation & AI Assistant Area */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center justify-between">
-                  <span>Author Query Description</span>
-                  <span className="text-[10px] text-emerald-800 font-mono font-semibold">
-                    Original Submission
+                  <span className="text-slate-300">•</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-slate-100 text-slate-700 font-mono">
+                    {selectedTicket.status.replace("_", " ")}
                   </span>
                 </div>
-                <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
-                  {selectedTicket.description}
-                </p>
+
+                <div className="flex items-center gap-2 mt-0.5">
+                  <h2 className="text-xs font-bold text-slate-900 truncate">
+                    {selectedTicket.subject}
+                  </h2>
+                  <span className="text-slate-300 hidden sm:inline">•</span>
+                  <span className="text-[11px] text-slate-500 truncate hidden sm:inline">
+                    {typeof selectedTicket.author === "object" ? selectedTicket.author.name : "Author"}
+                    {selectedTicket.book && typeof selectedTicket.book === "object" ? ` (📖 ${selectedTicket.book.title})` : ""}
+                  </span>
+                </div>
               </div>
 
-              {/* AI Draft Generator Banner */}
-              <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2 text-xs font-bold text-emerald-900">
-                    <Sparkles className="w-4 h-4 text-emerald-700" />
-                    <span>BookLeaf AI Knowledge Assistant</span>
-                  </div>
-                  <button
-                    onClick={handleGenerateAiDraft}
-                    disabled={generatingAiDraft}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-900 text-white font-semibold text-xs shadow-xs transition-all disabled:opacity-50"
-                  >
-                    <Bot className="w-3.5 h-3.5" />
-                    <span>{generatingAiDraft ? "Generating..." : "Generate AI Draft"}</span>
-                  </button>
-                </div>
-                <p className="text-[11px] text-emerald-800 leading-relaxed">
-                  Synthesizes knowledge base guidelines (80% net royalties, distribution, SLAs) into a verified response draft.
-                </p>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowTriageControls(!showTriageControls)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+                    showTriageControls
+                      ? "bg-slate-100 text-slate-900 border-slate-300 shadow-2xs"
+                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  }`}
+                  title="Triage Settings"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Triage</span>
+                  {showTriageControls ? (
+                    <ChevronUp className="w-3 h-3 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3 text-slate-400" />
+                  )}
+                </button>
 
-                {aiDraft && (
-                  <div className="mt-3 bg-white border border-emerald-200 rounded-xl p-3.5 shadow-xs">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] font-mono text-emerald-800 font-bold uppercase">
-                        AI Suggested Response
-                      </span>
-                      <button
-                        onClick={() => {
-                          setReplyBody(aiDraft);
-                          setCopiedDraft(true);
-                          setTimeout(() => setCopiedDraft(false), 2000);
-                        }}
-                        className="flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-900 font-bold"
-                      >
-                        {copiedDraft ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{copiedDraft ? "Inserted!" : "Insert into Reply"}</span>
-                      </button>
-                    </div>
-                    <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
-                      {aiDraft}
-                    </p>
-                  </div>
-                )}
+                <button
+                  onClick={() => setSelectedTicket(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
+            </div>
 
-              {/* Thread History */}
-              <div className="space-y-3">
-                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Conversation Thread ({selectedTicket.messages?.length || 0})
-                </div>
-
-                {selectedTicket.messages && selectedTicket.messages.length > 0 ? (
-                  selectedTicket.messages.map((msg, idx) => (
-                    <div
-                      key={msg._id || idx}
-                      className={`p-4 rounded-xl text-xs border ${
-                        msg.isInternal
-                          ? "bg-amber-50/70 border-amber-200 text-amber-900"
-                          : msg.senderType === "admin"
-                          ? "bg-slate-50 border-slate-200 text-slate-800"
-                          : "bg-white border-slate-200 text-slate-800"
-                      }`}
+            {/* Collapsible Minimal Triage Bar (Tucked Away by Default) */}
+            {showTriageControls && (
+              <div className="p-3.5 bg-slate-50/90 border-b border-slate-200 text-xs space-y-2.5 animate-in slide-in-from-top-2 duration-150">
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">
+                      Status
+                    </label>
+                    <select
+                      value={selectedTicket.status}
+                      onChange={(e) => requestStatusChange(e.target.value)}
+                      className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none focus:border-emerald-600 shadow-2xs"
                     >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-900">
-                            {typeof msg.sender === "object" ? (msg.sender as any).name : "Team Member"}
+                      {(Object.values(STATUSES) as string[]).map((st) => (
+                        <option key={st} value={st}>
+                          {st.replace("_", " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">
+                      Category
+                    </label>
+                    <select
+                      value={selectedTicket.category}
+                      onChange={(e) => requestCategoryChange(e.target.value)}
+                      className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none focus:border-emerald-600 shadow-2xs"
+                    >
+                      {(Object.values(CATEGORIES) as string[]).map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">
+                      Priority
+                    </label>
+                    <select
+                      value={selectedTicket.priority}
+                      onChange={(e) => requestPriorityChange(e.target.value)}
+                      className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none focus:border-emerald-600 shadow-2xs"
+                    >
+                      {(Object.values(PRIORITIES) as string[]).map((pr) => (
+                        <option key={pr} value={pr}>
+                          {pr}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400 text-[11px]">Assignee:</span>
+                    <span className="font-semibold text-slate-800 text-[11px]">
+                      {selectedTicket.assignedTo && typeof selectedTicket.assignedTo === "object"
+                        ? selectedTicket.assignedTo.name
+                        : "Unassigned"}
+                    </span>
+                  </div>
+
+                  <div>
+                    {selectedTicket.assignedTo &&
+                    typeof selectedTicket.assignedTo === "object" &&
+                    user?._id &&
+                    selectedTicket.assignedTo._id === user._id ? (
+                      <button
+                        type="button"
+                        onClick={requestUnassignTicket}
+                        disabled={actionLoading}
+                        className="text-[11px] text-slate-500 hover:text-red-600 font-medium underline"
+                      >
+                        Release Ticket
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={requestAssignToMe}
+                        disabled={actionLoading}
+                        className="px-2.5 py-1 rounded-md bg-emerald-800 hover:bg-emerald-900 text-white font-medium text-[11px] flex items-center gap-1 shadow-2xs"
+                      >
+                        <UserPlus className="w-3 h-3" />
+                        <span>Assign to Me</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Breathing, Clean Chat Timeline */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-slate-50/30">
+              <div className="flex items-center justify-center my-1">
+                <span className="text-[10px] font-mono text-slate-400">
+                  {new Date(selectedTicket.createdAt).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
+                </span>
+              </div>
+
+              {/* 1. Root Message: Author Initial Query (Left Aligned) */}
+              <div className="flex items-start gap-2.5 max-w-[88%] self-start animate-in fade-in">
+                <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">
+                  <User className="w-3.5 h-3.5 text-slate-600" />
+                </div>
+
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex items-center gap-2 pl-0.5 text-[11px]">
+                    <span className="font-bold text-slate-800">
+                      {typeof selectedTicket.author === "object" ? selectedTicket.author.name : "Author"}
+                    </span>
+                    <span className="text-[9px] px-1 rounded bg-slate-200/70 text-slate-600 font-medium">Author</span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {new Date(selectedTicket.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-100 text-slate-800 rounded-2xl rounded-tl-xs px-3.5 py-2.5 text-xs leading-relaxed whitespace-pre-wrap">
+                    {selectedTicket.description}
+                  </div>
+
+                  {/* Attached Evidence Chips */}
+                  {selectedTicket.attachments && selectedTicket.attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {selectedTicket.attachments.map((att, idx) => (
+                        <a
+                          key={att.storageUrl || idx}
+                          href={att.storageUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white border border-slate-200 hover:border-emerald-600 text-[11px] text-slate-700 font-medium transition-colors shadow-2xs group"
+                        >
+                          <Paperclip className="w-3 h-3 text-emerald-800" />
+                          <span className="truncate max-w-[140px]">{att.originalName}</span>
+                          <span className="text-[9px] text-slate-400 font-mono">
+                            ({(att.sizeBytes / 1024).toFixed(0)}KB)
                           </span>
-                          <span
-                            className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase font-bold ${
-                              msg.isInternal
-                                ? "bg-amber-100 text-amber-800 border border-amber-300"
-                                : "bg-slate-100 text-slate-700 border border-slate-200"
-                            }`}
-                          >
-                            {msg.isInternal ? "INTERNAL NOTE" : msg.senderType}
+                          <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-emerald-700" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 2. Conversation Messages Stream */}
+              {selectedTicket.messages && selectedTicket.messages.length > 0 && (
+                selectedTicket.messages.map((msg, idx) => {
+                  const isAuthor = msg.senderType === "author";
+                  const isInternal = msg.isInternal;
+                  const senderName =
+                    typeof msg.sender === "object" && msg.sender ? (msg.sender as any).name : isAuthor ? "Author" : "Staff";
+                  const formattedTime = new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+                  // Centered Internal Staff Note
+                  if (isInternal) {
+                    return (
+                      <div
+                        key={msg._id || idx}
+                        className="mx-auto my-2 w-full max-w-md bg-amber-50/70 border border-amber-200/80 rounded-xl px-3 py-2 text-xs shadow-2xs animate-in fade-in"
+                      >
+                        <div className="flex items-center justify-between text-[10px] text-amber-800 font-medium mb-1">
+                          <span className="flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-amber-700" />
+                            <span>Internal note · {senderName}</span>
                           </span>
+                          <span className="font-mono text-amber-600">{formattedTime}</span>
                         </div>
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
-                          <Clock className="w-3 h-3 text-slate-400" />
-                          <span>
-                            {new Date(msg.createdAt).toLocaleDateString([], {
-                              month: "short",
-                              day: "numeric",
-                            })}
-                            ,{" "}
-                            {new Date(msg.createdAt).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                          <span className="text-slate-500">({getTimeAgo(msg.createdAt)})</span>
+                        <p className="text-xs text-amber-950 whitespace-pre-wrap leading-relaxed">
+                          {msg.body}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  // Author Follow-up Message (Left Aligned)
+                  if (isAuthor) {
+                    return (
+                      <div
+                        key={msg._id || idx}
+                        className="flex items-start gap-2.5 max-w-[85%] self-start animate-in fade-in"
+                      >
+                        <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">
+                          <User className="w-3.5 h-3.5 text-slate-600" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-0.5 pl-0.5 text-[11px]">
+                            <span className="font-bold text-slate-800">{senderName}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">{formattedTime}</span>
+                          </div>
+                          <div className="bg-slate-100 text-slate-800 px-3.5 py-2.5 rounded-2xl rounded-tl-xs text-xs leading-relaxed whitespace-pre-wrap">
+                            {msg.body}
+                          </div>
                         </div>
                       </div>
-                      <p className="whitespace-pre-wrap leading-relaxed">{msg.body}</p>
+                    );
+                  }
+
+                  // Staff Message (Right Aligned)
+                  return (
+                    <div
+                      key={msg._id || idx}
+                      className="flex items-start justify-end gap-2.5 max-w-[85%] ml-auto animate-in fade-in"
+                    >
+                      <div className="flex flex-col items-end">
+                        <div className="flex items-center gap-1.5 mb-0.5 pr-0.5 text-[11px]">
+                          <span className="text-[10px] text-slate-400 font-mono">{formattedTime}</span>
+                          <span className="font-semibold text-slate-800">{senderName}</span>
+                        </div>
+                        <div className="bg-emerald-800 text-white px-3.5 py-2.5 rounded-2xl rounded-tr-xs text-xs leading-relaxed shadow-xs whitespace-pre-wrap">
+                          {msg.body}
+                        </div>
+                        {msg.isAiDraft && (
+                          <span className="text-[9px] text-emerald-700 font-medium flex items-center gap-1 mt-0.5 pr-1">
+                            <Sparkles className="w-3 h-3 text-emerald-600" /> AI-Assisted
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="w-7 h-7 rounded-full bg-emerald-800 text-white font-bold text-[11px] flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                        <Shield className="w-3.5 h-3.5 text-emerald-200" />
+                      </div>
                     </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-slate-400 italic">No previous messages in this ticket.</p>
-                )}
-              </div>
+                  );
+                })
+              )}
+
+              {/* Scroll anchor */}
+              <div ref={messagesEndRef} />
             </div>
 
-            {/* Bottom Reply Composer */}
-            <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-200 bg-slate-50/70">
+            {/* Minimalist Chat Composer */}
+            <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-100 bg-white">
+              {/* Mode Toggle Tabs & AI Quick Assist */}
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-bold text-slate-800">
-                  {isInternalNote ? "Add Staff Note (Internal Only)" : "Send Reply to Author"}
-                </label>
-                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isInternalNote}
-                    onChange={(e) => setIsInternalNote(e.target.checked)}
-                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                  />
-                  <span className="text-[11px] font-semibold text-amber-700 flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> Internal Staff Note
-                  </span>
-                </label>
+                <div className="flex items-center p-0.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setIsInternalNote(false)}
+                    className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                      !isInternalNote
+                        ? "bg-white text-slate-900 shadow-2xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    Reply to Author
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsInternalNote(true)}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                      isInternalNote
+                        ? "bg-amber-100 text-amber-900 shadow-2xs font-bold"
+                        : "text-slate-500 hover:text-amber-800"
+                    }`}
+                  >
+                    <Lock className="w-3 h-3 text-amber-700" />
+                    <span>Internal Note</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGenerateAiDraft}
+                  disabled={generatingAiDraft}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-emerald-800 hover:bg-emerald-50 border border-emerald-200/80 transition-all disabled:opacity-50 shadow-2xs"
+                  title="Generate response from BookLeaf knowledge base"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>{generatingAiDraft ? "Drafting..." : "AI Assist"}</span>
+                </button>
               </div>
 
-              <textarea
-                rows={3}
-                value={replyBody}
-                onChange={(e) => setReplyBody(e.target.value)}
-                placeholder={
-                  isInternalNote
-                    ? "Write an internal triage note (invisible to author)..."
-                    : "Type response to author or generate from AI..."
-                }
-                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 transition-colors shadow-xs"
-              />
-
-              <div className="flex justify-end mt-2.5">
-                <button
-                  type="submit"
-                  disabled={sendingMessage || !replyBody.trim()}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-semibold text-white shadow-xs transition-all disabled:opacity-50 ${
+              {/* Textarea with docked Send button */}
+              <div className="relative">
+                <textarea
+                  rows={2}
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                      handleSendMessage(e);
+                    }
+                  }}
+                  placeholder={
                     isInternalNote
-                      ? "bg-amber-600 hover:bg-amber-700"
-                      : "bg-emerald-800 hover:bg-emerald-900"
+                      ? "Write a private internal note (invisible to author)..."
+                      : "Type your reply to the author (Cmd+Enter to send)..."
+                  }
+                  className={`w-full rounded-xl p-2.5 pr-20 text-xs text-slate-900 placeholder-slate-400 focus:outline-none transition-all shadow-2xs resize-none ${
+                    isInternalNote
+                      ? "bg-amber-50/40 border border-amber-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                      : "bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
                   }`}
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{sendingMessage ? "Sending..." : isInternalNote ? "Save Note" : "Send to Author"}</span>
-                </button>
+                />
+
+                <div className="absolute right-2 bottom-2">
+                  <button
+                    type="submit"
+                    disabled={sendingMessage || !replyBody.trim()}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-white shadow-2xs transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                      isInternalNote
+                        ? "bg-amber-600 hover:bg-amber-700"
+                        : "bg-emerald-800 hover:bg-emerald-900"
+                    }`}
+                  >
+                    <span>{sendingMessage ? "..." : "Send"}</span>
+                    <Send className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {/* Confirmation Modal before Critical Actions */}
+      {pendingAction && (
+        <ConfirmModal
+          isOpen={Boolean(pendingAction)}
+          title={pendingAction.title}
+          message={pendingAction.message}
+          confirmText={pendingAction.confirmText}
+          confirmVariant={pendingAction.confirmVariant}
+          loading={actionLoading}
+          onConfirm={executePendingAction}
+          onCancel={() => setPendingAction(null)}
+        />
       )}
     </AdminLayout>
   );
