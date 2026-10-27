@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { AuthorLayout } from "../../components/layout/AuthorLayout";
 import { ticketApi } from "../../api/ticketApi";
+import { CreateTicketModal } from "../../components/tickets/CreateTicketModal";
+import { useSocket } from "../../context/SocketContext";
 import type { Ticket } from "../../types";
 import {
   PlusCircle,
@@ -55,16 +57,30 @@ function renderSlaBadge(t: Ticket) {
 export function AuthorTicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Filters
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+
+  // Create Ticket Modal State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const initialBookId = searchParams.get("bookId") || undefined;
 
   // Slide-over Thread Modal
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  const { socket, joinTicket, leaveTicket } = useSocket();
+
+  // Auto-open modal if URL has ?new=true or ?bookId=...
+  useEffect(() => {
+    if (searchParams.get("new") === "true" || searchParams.get("bookId")) {
+      setShowCreateModal(true);
+    }
+  }, [searchParams]);
 
   const fetchTickets = useCallback(async () => {
     try {
@@ -84,6 +100,66 @@ export function AuthorTicketsPage() {
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
+
+  // Join ticket room when thread drawer is open
+  useEffect(() => {
+    if (!selectedTicket?._id) return;
+    joinTicket(selectedTicket._id);
+
+    return () => {
+      leaveTicket(selectedTicket._id);
+    };
+  }, [selectedTicket?._id, joinTicket, leaveTicket]);
+
+  // Real-time socket event listeners for thread and ticket updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMessagePosted = (payload: { ticketId: string; message: any }) => {
+      if (selectedTicket && payload.ticketId === selectedTicket._id) {
+        setSelectedTicket((prev) => {
+          if (!prev) return null;
+          const exists = prev.messages?.some((m) => m._id === payload.message._id);
+          if (exists) return prev;
+          return {
+            ...prev,
+            messages: [...(prev.messages || []), payload.message],
+          };
+        });
+      }
+    };
+
+    const handleTicketUpdated = (payload: { ticketId: string; status?: string; ticket?: any }) => {
+      const newStatus = payload.status || payload.ticket?.status;
+      if (newStatus) {
+        setTickets((prev) =>
+          prev.map((t) => (t._id === payload.ticketId ? { ...t, status: newStatus as any } : t))
+        );
+        if (selectedTicket && selectedTicket._id === payload.ticketId) {
+          setSelectedTicket((prev) => (prev ? { ...prev, status: newStatus as any } : null));
+        }
+      }
+    };
+
+    const handleTicketCreated = (payload: { ticket: Ticket }) => {
+      if (payload.ticket) {
+        setTickets((prev) => {
+          if (prev.some((t) => t._id === payload.ticket._id)) return prev;
+          return [payload.ticket, ...prev];
+        });
+      }
+    };
+
+    socket.on("MESSAGE_POSTED", handleMessagePosted);
+    socket.on("TICKET_UPDATED", handleTicketUpdated);
+    socket.on("TICKET_CREATED", handleTicketCreated);
+
+    return () => {
+      socket.off("MESSAGE_POSTED", handleMessagePosted);
+      socket.off("TICKET_UPDATED", handleTicketUpdated);
+      socket.off("TICKET_CREATED", handleTicketCreated);
+    };
+  }, [socket, selectedTicket]);
 
   const openTicketDrawer = async (ticket: Ticket) => {
     try {
@@ -175,13 +251,13 @@ export function AuthorTicketsPage() {
               ))}
             </select>
 
-            <Link
-              to="/author/tickets/new"
+            <button
+              onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-900 text-white font-semibold text-xs transition-colors shadow-xs"
             >
               <PlusCircle className="w-3.5 h-3.5" />
               <span>Submit Query</span>
-            </Link>
+            </button>
           </div>
         </div>
 
@@ -461,6 +537,23 @@ export function AuthorTicketsPage() {
           </div>
         </div>
       )}
+
+      {/* Create Ticket Modal */}
+      <CreateTicketModal
+        isOpen={showCreateModal}
+        onClose={() => {
+          setShowCreateModal(false);
+          if (searchParams.get("new") || searchParams.get("bookId")) {
+            setSearchParams({});
+          }
+        }}
+        initialBookId={initialBookId}
+        onSuccess={(newTicket) => {
+          setTickets((prev) => [newTicket, ...prev]);
+          setSuccessToast(`Ticket #${newTicket.ticketNumber} created successfully`);
+          setTimeout(() => setSuccessToast(null), 4000);
+        }}
+      />
     </AuthorLayout>
   );
 }

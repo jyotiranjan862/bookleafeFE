@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { AdminLayout } from "../../components/layout/AdminLayout";
 import { adminApi } from "../../api/adminApi";
+import { useSocket } from "../../context/SocketContext";
 import type { Ticket } from "../../types";
 import {
   Search,
@@ -96,6 +97,8 @@ export function AdminQueuePage() {
   const [copiedDraft, setCopiedDraft] = useState(false);
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
 
+  const { socket, joinTicket, leaveTicket } = useSocket();
+
   const loadQueueSummary = useCallback(async () => {
     try {
       const stats = await adminApi.getAnalytics();
@@ -122,6 +125,134 @@ export function AdminQueuePage() {
   useEffect(() => {
     loadQueueSummary();
   }, [loadQueueSummary]);
+
+  // Join ticket room when thread drawer is open
+  useEffect(() => {
+    if (!selectedTicket?._id) return;
+    joinTicket(selectedTicket._id);
+
+    return () => {
+      leaveTicket(selectedTicket._id);
+    };
+  }, [selectedTicket?._id, joinTicket, leaveTicket]);
+
+  // Real-time socket event listeners for queue & thread
+  useEffect(() => {
+    if (!socket) return;
+
+    // 1. When a new ticket is submitted in real-time
+    const handleTicketCreated = (payload: { ticket: Ticket }) => {
+      if (!payload.ticket) return;
+
+      setTickets((prev) => {
+        if (prev.some((t) => t._id === payload.ticket._id)) return prev;
+        return [payload.ticket, ...prev];
+      });
+
+      setTotalCount((prev) => prev + 1);
+      setQueueSummary((prev) => ({
+        ...prev,
+        total: prev.total + 1,
+        open: prev.open + 1,
+      }));
+
+      setActionSuccessMessage(`New Ticket #${payload.ticket.ticketNumber} arrived in queue`);
+      setTimeout(() => setActionSuccessMessage(null), 4000);
+    };
+
+    // 2. Real-time messages posted to thread (author responses or team responses)
+    const handleMessagePosted = (payload: { ticketId: string; message: any }) => {
+      if (selectedTicket && payload.ticketId === selectedTicket._id) {
+        setSelectedTicket((prev) => {
+          if (!prev) return null;
+          const exists = prev.messages?.some((m) => m._id === payload.message._id);
+          if (exists) return prev;
+          return {
+            ...prev,
+            messages: [...(prev.messages || []), payload.message],
+          };
+        });
+      }
+    };
+
+    const handleInternalNotePosted = (payload: { ticketId: string; message: any }) => {
+      if (selectedTicket && payload.ticketId === selectedTicket._id) {
+        setSelectedTicket((prev) => {
+          if (!prev) return null;
+          const exists = prev.messages?.some((m) => m._id === payload.message._id);
+          if (exists) return prev;
+          return {
+            ...prev,
+            messages: [...(prev.messages || []), payload.message],
+          };
+        });
+      }
+    };
+
+    // 3. Real-time ticket status updates
+    const handleTicketUpdated = (payload: { ticketId: string; status?: string; ticket?: any }) => {
+      const newStatus = payload.status || payload.ticket?.status;
+      if (newStatus) {
+        setTickets((prev) =>
+          prev.map((t) => (t._id === payload.ticketId ? { ...t, status: newStatus as any } : t))
+        );
+        if (selectedTicket && selectedTicket._id === payload.ticketId) {
+          setSelectedTicket((prev) => (prev ? { ...prev, status: newStatus as any } : null));
+        }
+      }
+    };
+
+    // 4. Real-time AI classification completed in background
+    const handleAiClassified = (payload: { ticketId: string; category?: string; priority?: string; ai?: any }) => {
+      setTickets((prev) =>
+        prev.map((t) =>
+          t._id === payload.ticketId
+            ? {
+                ...t,
+                category: payload.category || t.category,
+                priority: (payload.priority as any) || t.priority,
+              }
+            : t
+        )
+      );
+
+      if (selectedTicket && selectedTicket._id === payload.ticketId) {
+        setSelectedTicket((prev) =>
+          prev
+            ? {
+                ...prev,
+                category: payload.category || prev.category,
+                priority: (payload.priority as any) || prev.priority,
+                ai: payload.ai || prev.ai,
+              }
+            : null
+        );
+        if (payload.ai?.draftResponse) {
+          setAiDraft(payload.ai.draftResponse);
+        }
+      }
+    };
+
+    const handleQueueUpdated = () => {
+      loadQueueSummary();
+    };
+
+    socket.on("TICKET_CREATED", handleTicketCreated);
+    socket.on("MESSAGE_POSTED", handleMessagePosted);
+    socket.on("INTERNAL_NOTE_POSTED", handleInternalNotePosted);
+    socket.on("TICKET_UPDATED", handleTicketUpdated);
+    socket.on("AI_CLASSIFIED", handleAiClassified);
+    socket.on("QUEUE_UPDATED", handleQueueUpdated);
+
+    return () => {
+      socket.off("TICKET_CREATED", handleTicketCreated);
+      socket.off("MESSAGE_POSTED", handleMessagePosted);
+      socket.off("INTERNAL_NOTE_POSTED", handleInternalNotePosted);
+      socket.off("TICKET_UPDATED", handleTicketUpdated);
+      socket.off("AI_CLASSIFIED", handleAiClassified);
+      socket.off("QUEUE_UPDATED", handleQueueUpdated);
+    };
+  }, [socket, selectedTicket, loadQueueSummary]);
 
   // Fetch Tickets with Pagination and Filtering
   const fetchTickets = useCallback(async () => {

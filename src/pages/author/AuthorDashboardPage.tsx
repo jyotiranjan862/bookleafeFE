@@ -590,7 +590,7 @@ export function AuthorDashboardPage() {
                   const bookId = selectedBook._id;
                   const title = selectedBook.title;
                   setSelectedBook(null);
-                  navigate(`/author/tickets/new?bookId=${bookId}&bookTitle=${encodeURIComponent(title)}`);
+                  navigate(`/author/tickets?new=true&bookId=${bookId}&bookTitle=${encodeURIComponent(title)}`);
                 }}
                 className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-900 border border-slate-200 hover:border-emerald-200 text-xs font-semibold transition-colors flex items-center gap-1.5"
               >

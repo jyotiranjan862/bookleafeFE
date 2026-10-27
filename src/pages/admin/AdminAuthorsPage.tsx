@@ -416,14 +416,7 @@ export function AdminAuthorsPage() {
               </button>
             )}
 
-            {/* Actions */}
-            <button
-              onClick={() => handleOpenAddBook()}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold border border-slate-200 transition-colors"
-            >
-              <BookOpen className="w-3 h-3 text-slate-600" />
-              <span>+ Add Book</span>
-            </button>
+
 
             <button
               onClick={() => setShowAddAuthorModal(true)}

@@ -37,11 +37,6 @@ export function AuthorLayout({ children, title, subtitle }: AuthorLayoutProps) {
       icon: MessageSquare,
     },
     {
-      label: "Submit New Query",
-      path: "/author/tickets/new",
-      icon: PlusCircle,
-    },
-    {
       label: "Profile & Payouts",
       path: "/author/profile",
       icon: UserIcon,

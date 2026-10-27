@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuthContext } from "../../context/AuthContext";
+import { useSocket } from "../../context/SocketContext";
 import { ConfirmModal } from "../common/ConfirmModal";
 import {
   Shield,
@@ -23,6 +24,7 @@ interface AdminLayoutProps {
 
 export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
   const { user, logout } = useAuthContext();
+  const { unreadTicketsCount, realtimeToast, dismissToast } = useSocket();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -32,7 +34,8 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
       label: "Support Ticket Queue",
       path: "/admin/queue",
       icon: Inbox,
-      badge: "Live",
+      badge: unreadTicketsCount > 0 ? `+${unreadTicketsCount} New` : "Live",
+      badgeHighlight: unreadTicketsCount > 0,
     },
     {
       label: "Author Management",
@@ -119,8 +122,10 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
                 </div>
                 {item.badge && (
                   <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono font-bold ${
-                      isActive
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold transition-all ${
+                      item.badgeHighlight
+                        ? "bg-amber-500 text-white shadow-xs animate-pulse font-extrabold"
+                        : isActive
                         ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                         : "bg-slate-100 text-slate-500 border border-slate-200 group-hover:text-slate-600"
                     }`}
@@ -208,6 +213,40 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
         {/* Workspace Container */}
         <main className="flex-1 p-4 sm:p-8 max-w-[1600px] w-full mx-auto">{children}</main>
       </div>
+
+      {/* Real-time Toast Alert Notification */}
+      {realtimeToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white rounded-2xl p-4 shadow-2xl border border-slate-700/80 max-w-sm animate-in slide-in-from-bottom-3 duration-200">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 mt-0.5">
+                <Inbox className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white tracking-tight">
+                  {realtimeToast.title}
+                </div>
+                <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
+                  {realtimeToast.message}
+                </p>
+                <Link
+                  to="/admin/queue"
+                  onClick={dismissToast}
+                  className="inline-block mt-2 text-[10px] font-bold text-emerald-400 hover:text-emerald-300 uppercase tracking-wider"
+                >
+                  View in Queue →
+                </Link>
+              </div>
+            </div>
+            <button
+              onClick={dismissToast}
+              className="text-slate-400 hover:text-white p-1 rounded-lg"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

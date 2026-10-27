@@ -3,7 +3,6 @@ import { LandingPage } from "../pages/LandingPage";
 import { UnauthorizedPage } from "../pages/UnauthorizedPage";
 import { AuthorDashboardPage } from "../pages/author/AuthorDashboardPage";
 import { AuthorTicketsPage } from "../pages/author/AuthorTicketsPage";
-import { AuthorNewTicketPage } from "../pages/author/AuthorNewTicketPage";
 import { AuthorProfilePage } from "../pages/author/AuthorProfilePage";
 import { AdminQueuePage } from "../pages/admin/AdminQueuePage";
 import { AdminAuthorsPage } from "../pages/admin/AdminAuthorsPage";
@@ -27,7 +26,7 @@ export function AppRoutes() {
             <Routes>
               <Route path="dashboard" element={<AuthorDashboardPage />} />
               <Route path="tickets" element={<AuthorTicketsPage />} />
-              <Route path="tickets/new" element={<AuthorNewTicketPage />} />
+              <Route path="tickets/new" element={<Navigate to="/author/tickets?new=true" replace />} />
               <Route path="profile" element={<AuthorProfilePage />} />
               <Route path="*" element={<Navigate to="/author/dashboard" replace />} />
             </Routes>
