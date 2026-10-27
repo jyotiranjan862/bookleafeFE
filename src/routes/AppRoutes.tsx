@@ -2,7 +2,13 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { LandingPage } from "../pages/LandingPage";
 import { UnauthorizedPage } from "../pages/UnauthorizedPage";
 import { AuthorDashboardPage } from "../pages/author/AuthorDashboardPage";
+import { AuthorTicketsPage } from "../pages/author/AuthorTicketsPage";
+import { AuthorNewTicketPage } from "../pages/author/AuthorNewTicketPage";
+import { AuthorProfilePage } from "../pages/author/AuthorProfilePage";
 import { AdminQueuePage } from "../pages/admin/AdminQueuePage";
+import { AdminAuthorsPage } from "../pages/admin/AdminAuthorsPage";
+import { AdminBooksPage } from "../pages/admin/AdminBooksPage";
+import { AdminAnalyticsPage } from "../pages/admin/AdminAnalyticsPage";
 import { ProtectedRoute } from "../components/common/ProtectedRoute";
 import { ROLES } from "../utils/constants";
 
@@ -20,8 +26,9 @@ export function AppRoutes() {
           <ProtectedRoute allowedRoles={[ROLES.AUTHOR]}>
             <Routes>
               <Route path="dashboard" element={<AuthorDashboardPage />} />
-              <Route path="tickets" element={<AuthorDashboardPage />} />
-              <Route path="tickets/new" element={<AuthorDashboardPage />} />
+              <Route path="tickets" element={<AuthorTicketsPage />} />
+              <Route path="tickets/new" element={<AuthorNewTicketPage />} />
+              <Route path="profile" element={<AuthorProfilePage />} />
               <Route path="*" element={<Navigate to="/author/dashboard" replace />} />
             </Routes>
           </ProtectedRoute>
@@ -35,8 +42,9 @@ export function AppRoutes() {
           <ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.OPERATIONS_EXECUTIVE]}>
             <Routes>
               <Route path="queue" element={<AdminQueuePage />} />
-              <Route path="analytics" element={<AdminQueuePage />} />
-              <Route path="books" element={<AdminQueuePage />} />
+              <Route path="authors" element={<AdminAuthorsPage />} />
+              <Route path="books" element={<AdminBooksPage />} />
+              <Route path="analytics" element={<AdminAnalyticsPage />} />
               <Route path="*" element={<Navigate to="/admin/queue" replace />} />
             </Routes>
           </ProtectedRoute>

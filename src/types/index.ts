@@ -9,6 +9,9 @@ export interface User {
     phone?: string;
     city?: string;
     bio?: string;
+    bankAccountNumber?: string;
+    bankIfscCode?: string;
+    bankAccountName?: string;
     bankLinked?: boolean;
   };
   createdAt?: string;
@@ -160,3 +163,64 @@ export interface CreateTicketPayload {
   subject: string;
   description: string;
 }
+
+export interface AuthorWithMetrics {
+  _id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  isActive: boolean;
+  profile?: {
+    phone?: string;
+    city?: string;
+    bio?: string;
+    bankAccountNumber?: string;
+    bankIfscCode?: string;
+    bankAccountName?: string;
+    bankLinked?: boolean;
+  };
+  booksCount: number;
+  totalCopiesSold: number;
+  totalRoyaltyEarned: number;
+  royaltyPaid: number;
+  royaltyPending: number;
+  createdAt: string;
+}
+
+export interface AuthorFilterParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  bankLinked?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+}
+
+export interface AuthorDropdownItem {
+  _id: string;
+  name: string;
+  email: string;
+}
+
+export interface CreateAuthorPayload {
+  name: string;
+  email: string;
+  password?: string;
+  phone?: string;
+  city?: string;
+  bio?: string;
+  bankAccountNumber?: string;
+  bankIfscCode?: string;
+  bankAccountName?: string;
+}
+
+export interface CreateBookPayload {
+  title: string;
+  author: string;
+  isbn?: string;
+  genre?: string;
+  mrp?: number;
+  status?: string;
+  availableOn?: string[];
+}
+

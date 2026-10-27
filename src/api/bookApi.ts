@@ -23,23 +23,25 @@ export const bookApi = {
    * Get lightweight book list for ticket dropdown
    */
   getDropdownBooks: async (): Promise<BookDropdownItem[]> => {
-    const { data } = await apiClient.get<ApiResponse<BookDropdownItem[]>>("/books/dropdown");
-    return data.data;
+    const { data } = await apiClient.get<any>("/books/dropdown");
+    if (Array.isArray(data.data)) return data.data;
+    if (Array.isArray(data.data?.books)) return data.data.books;
+    return [];
   },
 
   /**
    * Get author catalog aggregated royalties
    */
   getRoyaltySummary: async (): Promise<RoyaltySummary> => {
-    const { data } = await apiClient.get<ApiResponse<RoyaltySummary>>("/books/royalty-summary");
-    return data.data;
+    const { data } = await apiClient.get<any>("/books/royalty-summary");
+    return data.data?.summary || data.data;
   },
 
   /**
    * Get single book details
    */
   getBookById: async (id: string): Promise<Book> => {
-    const { data } = await apiClient.get<ApiResponse<Book>>(`/books/${id}`);
-    return data.data;
+    const { data } = await apiClient.get<any>(`/books/${id}`);
+    return data.data?.book || data.data;
   },
 };

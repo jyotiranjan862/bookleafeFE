@@ -15,6 +15,15 @@ export const apiClient = axios.create({
   timeout: 15000,
 });
 
+// Attach JWT token to all requests when authenticated
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem("accessToken");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 /**
  * Normalizes backend error responses into readable messages
  */

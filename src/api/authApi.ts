@@ -22,10 +22,16 @@ export interface ChangePasswordPayload {
 export const authApi = {
   /**
    * Authenticate with email & password.
-   * HTTP-only session cookie is set automatically by backend.
+   * HTTP-only cookies are automatically set in the browser by the backend.
    */
   login: async (credentials: LoginPayload): Promise<User> => {
-    const { data } = await apiClient.post<ApiResponse<{ user: User }>>("/auth/login", credentials);
+    const { data } = await apiClient.post<
+      ApiResponse<{ user: User; accessToken?: string; refreshToken?: string }>
+    >("/auth/login", credentials);
+    // Optional fallback for legacy headers
+    if (data.data?.accessToken) {
+      localStorage.setItem("accessToken", data.data.accessToken);
+    }
     return data.data.user;
   },
 
@@ -33,7 +39,12 @@ export const authApi = {
    * Register a new author account.
    */
   register: async (payload: RegisterPayload): Promise<User> => {
-    const { data } = await apiClient.post<ApiResponse<{ user: User }>>("/auth/register", payload);
+    const { data } = await apiClient.post<
+      ApiResponse<{ user: User; accessToken?: string; refreshToken?: string }>
+    >("/auth/register", payload);
+    if (data.data?.accessToken) {
+      localStorage.setItem("accessToken", data.data.accessToken);
+    }
     return data.data.user;
   },
 
@@ -54,13 +65,30 @@ export const authApi = {
   },
 
   /**
-   * Logout session (clears HTTP cookie on backend)
+   * Update author profile and royalty payout bank credentials
+   */
+  updateProfile: async (payload: {
+    name?: string;
+    phone?: string;
+    city?: string;
+    bio?: string;
+    bankAccountNumber?: string;
+    bankIfscCode?: string;
+    bankAccountName?: string;
+  }): Promise<User> => {
+    const { data } = await apiClient.patch<ApiResponse<{ user: User }>>("/auth/profile", payload);
+    return data.data.user;
+  },
+
+  /**
+   * Logout session (clears HTTP-only cookies on backend and local storage)
    */
   logout: async (): Promise<void> => {
+    localStorage.removeItem("accessToken");
     try {
       await apiClient.post("/auth/logout");
     } catch {
-      // Ignore if logout route is missing or fails
+      // Ignore network errors on logout
     }
   },
 };

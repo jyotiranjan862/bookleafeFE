@@ -4,7 +4,6 @@ import { LoginModal } from "../components/common/LoginModal";
 import {
   BookOpen,
   Shield,
-  Sparkles,
   TrendingUp,
   Clock,
   Printer,
@@ -30,11 +29,6 @@ export function LandingPage() {
       <section className="relative overflow-hidden pt-12 pb-20 border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="text-center max-w-3xl mx-auto">
-            {/* Tagline Badge */}
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100/70 border border-emerald-300 text-emerald-900 text-xs font-semibold mb-6">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-700" />
-              <span>AI-Grounded Author Support & Communication Portal</span>
-            </div>
 
             {/* Main Headline */}
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-serif font-black text-stone-900 tracking-tight leading-[1.1] mb-6">

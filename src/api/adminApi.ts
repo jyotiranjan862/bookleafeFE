@@ -109,11 +109,97 @@ export const adminApi = {
   },
 
   /**
+   * Create a new book title assigned to an author
+   */
+  createBook: async (payload: any): Promise<Book> => {
+    const { data } = await apiClient.post<ApiResponse<{ book: Book }>>("/admin/books", payload);
+    return data.data.book;
+  },
+
+  /**
    * Update book status, MRP, or internal notes
    */
   updateBook: async (id: string, updates: Partial<Book>): Promise<Book> => {
-    const { data } = await apiClient.patch<ApiResponse<Book>>(`/admin/books/${id}`, updates);
+    const { data } = await apiClient.patch<ApiResponse<{ book: Book }>>(`/admin/books/${id}`, updates);
+    return data.data.book || (data.data as any);
+  },
+
+  /**
+   * Get paginated authors with live aggregated book counts and royalty financials
+   */
+  getAuthors: async (
+    params?: any
+  ): Promise<{
+    data: any[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    summary: {
+      totalAuthors: number;
+      totalBooks: number;
+      totalCopiesSold: number;
+      totalEarned: number;
+      totalPaid: number;
+      totalPending: number;
+    };
+  }> => {
+    const { data } = await apiClient.get<ApiResponse<any>>("/admin/authors", {
+      params,
+    });
     return data.data;
+  },
+
+  /**
+   * Create and onboard a new author account
+   */
+  createAuthor: async (payload: any): Promise<any> => {
+    const { data } = await apiClient.post<ApiResponse<{ author: any }>>("/admin/authors", payload);
+    return data.data.author;
+  },
+
+  /**
+   * Lightweight author list for dropdown select
+   */
+  getAuthorsDropdown: async (): Promise<Array<{ _id: string; name: string; email: string }>> => {
+    const { data } = await apiClient.get<ApiResponse<{ authors: Array<{ _id: string; name: string; email: string }> }>>(
+      "/admin/authors/dropdown"
+    );
+    return data.data.authors;
+  },
+
+  /**
+   * Activate or deactivate author login status
+   */
+  updateAuthorStatus: async (authorId: string, isActive: boolean): Promise<any> => {
+    const { data } = await apiClient.patch<ApiResponse<{ author: any }>>(
+      `/admin/authors/${authorId}/status`,
+      { isActive }
+    );
+    return data.data.author;
+  },
+
+  /**
+   * Reset author account password
+   */
+  resetAuthorPassword: async (authorId: string, password: string): Promise<string> => {
+    const { data } = await apiClient.patch<ApiResponse<any>>(
+      `/admin/authors/${authorId}/password`,
+      { password }
+    );
+    return data.message || "Password updated successfully";
+  },
+
+  /**
+   * Get all books published by this specific author
+   */
+  getAuthorBooks: async (authorId: string): Promise<Book[]> => {
+    const { data } = await apiClient.get<any>(
+      `/admin/authors/${authorId}/books`
+    );
+    if (Array.isArray(data.data)) return data.data;
+    if (Array.isArray(data.data?.data)) return data.data.data;
+    return [];
   },
 };
 

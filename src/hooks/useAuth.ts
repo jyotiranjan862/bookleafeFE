@@ -39,6 +39,7 @@ export function useAuth(): UseAuthResult {
       setUser(currentUser);
       return currentUser;
     } catch {
+      localStorage.removeItem("accessToken");
       setUser(null);
       return null;
     } finally {

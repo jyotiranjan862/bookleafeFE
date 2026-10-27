@@ -29,3 +29,7 @@ export const TICKET_PRIORITY = {
   LOW: "Low",
 } as const;
 
+// Aliases for convenience across frontend components
+export const STATUSES = TICKET_STATUS;
+export const CATEGORIES = TICKET_CATEGORY;
+export const PRIORITIES = TICKET_PRIORITY;
