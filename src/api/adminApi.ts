@@ -76,11 +76,16 @@ export const adminApi = {
   /**
    * Generate or regenerate AI draft response based on BookLeaf Knowledge Base
    */
-  generateAiDraft: async (id: string): Promise<{ draftResponse: string; modelUsed?: string }> => {
-    const { data } = await apiClient.post<ApiResponse<{ draftResponse: string; modelUsed?: string }>>(
+  generateAiDraft: async (id: string): Promise<{ draftResponse: string; draft: string; modelUsed?: string }> => {
+    const { data } = await apiClient.post<ApiResponse<{ draftResponse?: string; draft?: string; modelUsed?: string }>>(
       `/admin/tickets/${id}/ai-draft`
     );
-    return data.data;
+    const draftText = data.data?.draftResponse || (data.data as any)?.draft || "";
+    return {
+      draftResponse: draftText,
+      draft: draftText,
+      modelUsed: data.data?.modelUsed,
+    };
   },
 
   /**

@@ -469,10 +469,27 @@ export function AdminQueuePage() {
     if (!selectedTicket) return;
     try {
       setGeneratingAiDraft(true);
-      const draftResult = await adminApi.generateAiDraft(selectedTicket._id);
-      if (draftResult.draftResponse) {
-        setReplyBody(draftResult.draftResponse);
+      const draftResult: any = await adminApi.generateAiDraft(selectedTicket._id);
+      const text = draftResult?.draftResponse || draftResult?.draft || "";
+      if (text) {
+        setReplyBody(text);
+        setIsInternalNote(false);
         showToast("AI response drafted into reply box");
+        setSelectedTicket((prev) =>
+          prev
+            ? {
+                ...prev,
+                ai: {
+                  ...(prev.ai as any),
+                  status: "completed",
+                  draftResponse: text,
+                  draftGeneratedAt: new Date().toISOString(),
+                },
+              }
+            : null
+        );
+      } else {
+        alert("The AI model returned an empty response. Please try again.");
       }
     } catch (err: any) {
       alert(err?.message || "Failed to generate AI draft");
@@ -1276,6 +1293,32 @@ export function AdminQueuePage() {
 
             {/* Minimalist Chat Composer */}
             <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-100 bg-white">
+              {/* AI Draft Suggestion Pill / Banner */}
+              {selectedTicket.ai?.draftResponse && !replyBody && (
+                <div className="mb-2.5 p-2.5 rounded-xl bg-emerald-50/90 border border-emerald-200/90 text-xs animate-in fade-in">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-emerald-900 flex items-center gap-1.5 text-[11px]">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-700" />
+                      AI Policy Draft Ready ({selectedTicket.ai.modelUsed || "Gemini"})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplyBody(selectedTicket.ai?.draftResponse || "");
+                        setIsInternalNote(false);
+                        showToast("AI response loaded into reply box");
+                      }}
+                      className="px-2.5 py-0.5 rounded-md bg-emerald-800 hover:bg-emerald-900 text-white font-semibold text-[10px] shadow-2xs transition-all cursor-pointer"
+                    >
+                      Insert into Reply
+                    </button>
+                  </div>
+                  <p className="text-emerald-950/80 text-[11px] line-clamp-2 leading-relaxed">
+                    {selectedTicket.ai.draftResponse}
+                  </p>
+                </div>
+              )}
+
               {/* Mode Toggle Tabs & AI Quick Assist */}
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center p-0.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-medium">
@@ -1308,7 +1351,7 @@ export function AdminQueuePage() {
                   type="button"
                   onClick={handleGenerateAiDraft}
                   disabled={generatingAiDraft}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-emerald-800 hover:bg-emerald-50 border border-emerald-200/80 transition-all disabled:opacity-50 shadow-2xs"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-emerald-800 hover:bg-emerald-50 border border-emerald-200/80 transition-all disabled:opacity-50 shadow-2xs cursor-pointer"
                   title="Generate response from BookLeaf knowledge base"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
@@ -1319,7 +1362,7 @@ export function AdminQueuePage() {
               {/* Textarea with docked Send button */}
               <div className="relative">
                 <textarea
-                  rows={2}
+                  rows={4}
                   value={replyBody}
                   onChange={(e) => setReplyBody(e.target.value)}
                   onKeyDown={(e) => {
@@ -1330,9 +1373,9 @@ export function AdminQueuePage() {
                   placeholder={
                     isInternalNote
                       ? "Write a private internal note (invisible to author)..."
-                      : "Type your reply to the author (Cmd+Enter to send)..."
+                      : "Type or edit your reply to the author (Cmd+Enter to send)..."
                   }
-                  className={`w-full rounded-xl p-2.5 pr-20 text-xs text-slate-900 placeholder-slate-400 focus:outline-none transition-all shadow-2xs resize-none ${
+                  className={`w-full rounded-xl p-2.5 pr-20 text-xs text-slate-900 placeholder-slate-400 focus:outline-none transition-all shadow-2xs resize-y min-h-[75px] max-h-[220px] ${
                     isInternalNote
                       ? "bg-amber-50/40 border border-amber-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                       : "bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
